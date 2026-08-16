@@ -1814,18 +1814,44 @@ function Install-Repository {
         $env:GIT_SSH_COMMAND = $null
 
         if (-not $cloneSuccess) {
-            if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue }
             Write-Info "SSH failed, trying HTTPS..."
-            try {
-                Invoke-NativeWithRelaxedErrorAction { git -c windows.appendAtomically=false clone --depth 1 --branch $Branch $RepoUrlHttps $InstallDir }
-                if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
-            } catch { }
+            # A connection dropped mid-transfer ("RPC failed", "unexpected
+            # disconnect while reading sideband packet", "fatal: early EOF")
+            # is a transient network blip, not an auth/ref problem -- retry
+            # once in place before falling through to the slower ZIP
+            # fallback (observed on an otherwise-healthy clean-VM retry).
+            for ($httpsAttempt = 1; $httpsAttempt -le 2 -and -not $cloneSuccess; $httpsAttempt++) {
+                if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue }
+                if ($httpsAttempt -gt 1) {
+                    Write-Warn "HTTPS clone attempt $($httpsAttempt - 1) failed -- retrying..."
+                    Start-Sleep -Seconds 3
+                }
+                try {
+                    Invoke-NativeWithRelaxedErrorAction { git -c windows.appendAtomically=false clone --depth 1 --branch $Branch $RepoUrlHttps $InstallDir }
+                    if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
+                } catch { }
+            }
         }
 
         # Fallback: download ZIP archive (bypasses git file I/O issues entirely)
         if (-not $cloneSuccess) {
+          # A file that Get-ChildItem/Expand-Archive just wrote can still throw
+          # "Cannot find path '...' because it does not exist" a moment later
+          # in Move-Item -- real-time antivirus scanning the freshly-extracted
+          # files can race the move and briefly lock/remove one of them
+          # (observed on an otherwise-healthy clean-VM retry, e.g. a stray
+          # .dockerignore). Retry the whole download+extract+move as one unit
+          # -- a half-moved directory from a failed attempt isn't a safe base
+          # to resume from -- rather than patching just the failed step.
+          $maxZipAttempts = 2
+          for ($zipAttempt = 1; $zipAttempt -le $maxZipAttempts -and -not $cloneSuccess; $zipAttempt++) {
             if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue }
-            Write-Warn "Git clone failed -- downloading ZIP archive instead..."
+            if ($zipAttempt -gt 1) {
+                Write-Warn "ZIP download/extract attempt $($zipAttempt - 1) failed -- retrying ($zipAttempt/$maxZipAttempts)..."
+                Start-Sleep -Seconds 3
+            } else {
+                Write-Warn "Git clone failed -- downloading ZIP archive instead..."
+            }
             try {
                 # Pick the ZIP URL for the most-specific ref the caller asked
                 # for.  GitHub supports archive URLs for commits, tags, and
@@ -1914,10 +1940,11 @@ function Install-Repository {
             } catch {
                 Write-Err "ZIP download also failed: $_"
             }
+          }
         }
 
         if (-not $cloneSuccess) {
-            throw "Failed to download repository (tried git clone SSH, HTTPS, and ZIP)"
+            throw "Failed to download repository (tried git clone SSH, HTTPS, and ZIP, retried on transient failures)"
         }
     }
 
