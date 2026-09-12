@@ -26,6 +26,7 @@ import type { ConfigFieldSchema, HermesConfigRecord } from '@/types/hermes'
 import { setHermesConfigCache, useHermesConfigRecord } from '../hooks/use-config-record'
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
 import { PanelEmpty } from '../overlays/panel'
+import { ProfileInterviewCard } from './profile-interview-card'
 
 import { ConfigField } from './config-field'
 import { enumOptionsFor, getNested, isExternalMemoryProvider, sectionFieldEntries, setNested } from './helpers'
@@ -297,6 +298,7 @@ export function ConfigSettings({
 
   return (
     <SettingsContent>
+      {activeSectionId === 'memory' && <ProfileInterviewCard />}
       {activeSectionId === 'model' && (
         <div className="mb-6">
           <ModelSettings onMainModelChanged={onMainModelChanged} />

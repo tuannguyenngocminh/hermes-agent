@@ -5,6 +5,7 @@ import { test } from 'vitest'
 import {
   bundledRuntimeImportCheck,
   detectRemoteDisplay,
+  gpuCommandLineSwitches,
   isWindowsBinaryPathInWsl,
   isWslEnvironment
 } from './bootstrap-platform'
@@ -83,4 +84,12 @@ test('detectRemoteDisplay honors the HERMES_DESKTOP_DISABLE_GPU override both wa
     }),
     null
   )
+})
+
+test('gpuCommandLineSwitches disables Chromium GPU when software rendering is selected', () => {
+  assert.deepEqual(gpuCommandLineSwitches('override (HERMES_DESKTOP_DISABLE_GPU)'), [
+    'disable-gpu',
+    'disable-gpu-compositing'
+  ])
+  assert.deepEqual(gpuCommandLineSwitches(null), [])
 })

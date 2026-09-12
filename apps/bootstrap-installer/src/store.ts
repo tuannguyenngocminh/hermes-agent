@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { atom, computed } from 'nanostores'
 
+
 /*
  * Bootstrap state store — single source of truth for installer screens.
  *
@@ -354,6 +355,7 @@ export async function launchHermesDesktop(): Promise<void> {
   if (!installRoot) {throw new Error('no install root')}
   await invoke('launch_hermes_desktop', { installRoot })
 }
+
 
 export async function openLogDir(): Promise<void> {
   if (fakeMode()) {return}

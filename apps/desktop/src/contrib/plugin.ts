@@ -12,6 +12,7 @@
  * through the plugin host loader (next phase); this is that seam.
  */
 
+import { bindPaneVisibility } from '@/components/pane-shell/tree/store'
 import { pluginRest, type PluginRestOptions, pluginSocket } from '@/hermes'
 import { createPluginI18n, type PluginI18n } from '@/i18n'
 import { readKey, writeKey } from '@/lib/storage'
@@ -33,6 +34,11 @@ export interface PluginStorage {
   remove(key: string): void
 }
 
+export interface PluginVisibilityStore {
+  get(): boolean
+  listen(fn: (open: boolean) => void): () => void
+}
+
 export interface PluginContext {
   /** The resolved plugin source tag, e.g. `'plugin:cost-meter'`. */
   readonly source: string
@@ -44,6 +50,8 @@ export interface PluginContext {
    *  that aren't contributions or sockets (store subscriptions, timers). Runs
    *  alongside every other disposer when the plugin deactivates. */
   onDispose: (fn: () => void) => void
+  /** Bind a plugin-owned pane's visibility to a reactive store. */
+  bindVisibility: (localPaneId: string, $open: PluginVisibilityStore, close?: () => void, open?: () => void) => void
   /** REST to this plugin's own backend namespace (`/api/plugins/<id>`); `path`
    *  is relative ('/board'). The sanctioned door for a plugin that ships a
    *  `plugin_api.py` — profile-aware, namespace-scoped by construction. Use
@@ -113,6 +121,10 @@ export function createPluginContext(pluginId: string, onDispose?: (dispose: () =
     register: c => track(registry.register(scope(c))),
     registerMany: cs => track(registry.registerMany(cs.map(scope))),
     onDispose: fn => void track(fn),
+    bindVisibility: (localPaneId, $open, close, open) => {
+      const dispose = bindPaneVisibility(`${pluginId}:${localPaneId}`, $open, close, open)
+      track(dispose)
+    },
     rest: <T>(path: string, opts?: PluginRestOptions) => pluginRest<T>(pluginId, path, opts),
     socket: (path, onMessage) => track(pluginSocket(pluginId, path, onMessage)),
     storage: createPluginStorage(pluginId),

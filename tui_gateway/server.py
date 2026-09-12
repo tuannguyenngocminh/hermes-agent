@@ -1631,6 +1631,7 @@ def _compute_host_turn_frame(
     text: Any,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
+    display_kind: str | None = None,
 ) -> dict:
     with session["history_lock"]:
         history = list(session.get("history", []))
@@ -1657,6 +1658,7 @@ def _compute_host_turn_frame(
         "source": _session_source(session),
         "attached_images": attached_images,
         "queued_prompt_generation": queued_prompt_generation,
+        "display_kind": display_kind,
     }
 
 
@@ -1734,6 +1736,7 @@ def _submit_prompt_to_compute_host(
     text: Any,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
+    display_kind: str | None = None,
 ) -> dict:
     cfg = _load_dashboard_process_isolation_config()
     frame = _compute_host_turn_frame(
@@ -1743,6 +1746,7 @@ def _submit_prompt_to_compute_host(
         text,
         image_paths=image_paths,
         queued_prompt_generation=queued_prompt_generation,
+        display_kind=display_kind,
     )
 
     def _complete(done: dict) -> None:
@@ -2160,6 +2164,12 @@ def _start_agent_build(sid: str, session: dict) -> None:
                         kw["reasoning_config_override"] = reasoning
                     if (tier := current.get("create_service_tier_override")) is not None:
                         kw["service_tier_override"] = tier
+                if current.get("profile_source"):
+                    # The session-create handler accepts only this fixed flag;
+                    # keep the toolset addition equally narrow at the agent
+                    # construction boundary.
+                    kw["additional_toolsets"] = ["source_profile"]
+                    kw["profile_source"] = True
                 agent = _make_agent(sid, key, **kw)
             finally:
                 _clear_session_context(tokens)
@@ -6286,6 +6296,8 @@ def _make_agent(
     reasoning_config_override: dict | None = None,
     service_tier_override: str | None = None,
     platform_override: str | None = None,
+    additional_toolsets: list[str] | None = None,
+    profile_source: bool = False,
 ):
     # AC-4 test seam: dead unless explicitly armed by the isolated certify
     # harness. Both inline and compute-host paths construct through _make_agent,
@@ -6414,7 +6426,18 @@ def _make_agent(
                 raise RuntimeError("Auth fallback resolved without a model")
             model = resolution.selected_model
     _pr = _load_provider_routing()
-    return AIAgent(
+    enabled_toolsets = _load_enabled_toolsets()
+    if additional_toolsets:
+        # ``additional_toolsets`` is only set internally from the fixed
+        # profile-source session flag above. Preserve the user-selected
+        # workspace toolsets, then add the one bundled capture tool.
+        enabled_toolsets = (
+            sorted(set(enabled_toolsets) | set(additional_toolsets))
+            if enabled_toolsets is not None
+            else None
+        )
+
+    agent = AIAgent(
         model=model,
         max_iterations=_cfg_max_turns(cfg, 500),
         provider=runtime.get("provider"),
@@ -6440,7 +6463,7 @@ def _make_agent(
             if service_tier_override is not None
             else _load_service_tier()
         ),
-        enabled_toolsets=_load_enabled_toolsets(),
+        enabled_toolsets=enabled_toolsets,
         # OpenRouter provider-routing prefs (config.yaml `provider_routing`).
         # Mirrors the messaging gateway + CLI so the desktop/TUI honors the same
         # routing instead of letting OpenRouter pick providers at random.
@@ -6461,6 +6484,16 @@ def _make_agent(
         fallback_model=_load_fallback_model(),
         **_agent_cbs(sid),
     )
+    if profile_source:
+        # This session has one fixed capture write. A repeated malformed save
+        # cannot make progress, so stop after the second failure instead of
+        # inheriting Hermes' deliberately permissive general chat guardrail.
+        from agent.tool_guardrails import ToolCallGuardrailController, source_profile_guardrail_config
+
+        agent._tool_guardrails = ToolCallGuardrailController(
+            source_profile_guardrail_config(agent._tool_guardrails.config)
+        )
+    return agent
 
 
 def _init_session(
@@ -6922,7 +6955,9 @@ def _legacy_display_kind(role: str, text: str) -> str | None:
     return None
 
 
-def _history_to_messages(history: list[dict]) -> list[dict]:
+def _history_to_messages(
+    history: list[dict], *, profile_source: bool = False
+) -> list[dict]:
     messages = []
     tool_call_args = {}
 
@@ -6992,6 +7027,12 @@ def _history_to_messages(history: list[dict]) -> list[dict]:
         if role == "user":
             invocation = _skill_scaffold_projection(content_text)
             if invocation:
+                # The profile-source card launches its fixed workflow as an
+                # internal prompt.  The user did not type a slash command, so
+                # its invocation banner is noise.  Keep every other skill's
+                # normal, transparent invocation projection unchanged.
+                if profile_source and invocation.split(maxsplit=1)[0] == "/profile-source-v4":
+                    continue
                 # Show the invocation, never the expanded skill body. The raw
                 # payload stays server-side: a rewind/regenerate re-sends the
                 # turn by ordinal, so no client needs it.
@@ -7072,7 +7113,7 @@ def _inflight_text(value: Any) -> str:
     return _content_display_text(value).strip()
 
 
-def _start_inflight_turn(session: dict, text: Any) -> None:
+def _start_inflight_turn(session: dict, text: Any, display_kind: str | None = None) -> None:
     now = time.time()
     session["inflight_turn"] = {
         "assistant": "",
@@ -7081,6 +7122,8 @@ def _start_inflight_turn(session: dict, text: Any) -> None:
         "updated_at": now,
         "user": _inflight_text(text),
     }
+    if display_kind:
+        session["inflight_turn"]["display_kind"] = display_kind
 
 
 def _append_inflight_delta(session: dict, delta: Any) -> None:
@@ -7561,6 +7604,9 @@ def _inflight_snapshot(session: dict) -> dict | None:
         "streaming": streaming,
         "user": user,
     }
+    display_kind = str(turn.get("display_kind") or "").strip()
+    if display_kind:
+        snapshot["display_kind"] = display_kind
     corrections = [c for c in (turn.get("corrections") or []) if str(c).strip()]
     if corrections:
         # Mid-turn redirects. Carried alongside the original prompt (not over
@@ -7949,7 +7995,9 @@ def _live_session_payload(
     payload = {
         "info": _fallback_session_info(session),
         "message_count": len(history),
-        "messages": [] if omit_messages else _history_to_messages(history),
+        "messages": [] if omit_messages else _history_to_messages(
+            history, profile_source=bool(session.get("profile_source"))
+        ),
         "messages_omitted": omit_messages,
         "running": running,
         "session_id": sid,
@@ -12290,7 +12338,9 @@ def _format_live_history_output(session: dict) -> str:
             )
         except Exception:
             pass
-    messages = _history_to_messages(history)
+    messages = _history_to_messages(
+        history, profile_source=bool(session.get("profile_source"))
+    )
     if not messages:
         return "No conversation history yet."
     lines = ["Conversation History", "────────────────────────────────────────"]
@@ -12328,13 +12378,17 @@ def _format_live_context_output(session: dict) -> str:
             messages = _history_to_messages(
                 db.get_messages_as_conversation(
                     session["session_key"], include_ancestors=True, include_row_ids=True
-                )
+                ),
+                profile_source=bool(session.get("profile_source")),
             )
         except Exception:
             messages = []
     if not messages:
         with session["history_lock"]:
-            messages = _history_to_messages(list(session.get("history", [])))
+            messages = _history_to_messages(
+                list(session.get("history", [])),
+                profile_source=bool(session.get("profile_source")),
+            )
     usage = _session_usage_snapshot(session)
     mirror = _metadata_mirror(session)
     lines = [

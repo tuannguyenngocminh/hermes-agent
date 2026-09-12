@@ -26,6 +26,7 @@ import { openExternalLink } from '@/lib/external-link'
 import { ExternalLink, Save, Trash2 } from '@/lib/icons'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
+import { $assistantPaneMode, setAssistantPaneMode } from '@/store/assistant-pane'
 import { $changeEventsAvailable, $pairingChangeTick, $platformsChangeTick } from '@/store/live-sync'
 import { notify, notifyError } from '@/store/notifications'
 import { runGatewayRestart } from '@/store/system-actions'
@@ -408,6 +409,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
       searchPlaceholder={m.search}
       searchValue={query}
     >
+      <AssistantPaneModeSetting />
       {!platforms ? (
         <PageLoader label={m.loading} />
       ) : (
@@ -886,6 +888,31 @@ function MessagingField({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h4 className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{children}</h4>
+}
+
+function AssistantPaneModeSetting() {
+  const mode = useStore($assistantPaneMode)
+
+  return (
+    <section className="mb-5 rounded-lg border border-(--ui-stroke-tertiary) p-4">
+      <h2 className="text-sm font-medium">Vị trí Siêu trợ lý mặc định</h2>
+      <p className="mt-1 text-xs text-muted-foreground">Chọn cách mở Panel Siêu trợ lý khi sử dụng ứng dụng.</p>
+      <div aria-label="Vị trí Siêu trợ lý mặc định" className="mt-3 flex gap-2" role="radiogroup">
+        {(['floating', 'docked'] as const).map(option => (
+          <button
+            aria-checked={mode === option}
+            className={cn('rounded-md border px-3 py-1.5 text-sm', mode === option && 'border-primary bg-primary/10')}
+            key={option}
+            onClick={() => setAssistantPaneMode(option)}
+            role="radio"
+            type="button"
+          >
+            {option === 'floating' ? 'Nổi' : 'Cố định bên phải'}
+          </button>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function PlatformHint({ platform }: { platform: MessagingPlatformInfo }) {

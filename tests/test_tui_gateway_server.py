@@ -2332,6 +2332,52 @@ def test_history_to_messages_projects_a_bare_skill_turn_to_the_command():
     ]
 
 
+def test_history_to_messages_hides_profile_source_skill_scaffolding_only_for_profile_session():
+    scaffolded = (
+        '[IMPORTANT: The user has invoked the "profile-source-v4" skill, indicating they '
+        "want you to follow its instructions. The full skill content is "
+        "loaded below.]\n\n# /profile-source-v4\n\nGreet the user."
+    )
+
+    assert server._history_to_messages(
+        [{"role": "user", "content": scaffolded}], profile_source=True
+    ) == []
+    assert server._history_to_messages(
+        [{"role": "user", "content": scaffolded}], profile_source=False
+    ) == [
+        {
+            "role": "user",
+            "text": "/profile-source-v4",
+            "display_kind": "skill_invocation",
+        }
+    ]
+
+
+def test_live_debug_transcripts_hide_profile_source_skill_scaffolding(monkeypatch):
+    """History and context debug views must match the normal profile transcript."""
+    scaffolded = (
+        '[IMPORTANT: The user has invoked the "profile-source-v4" skill, indicating they '
+        "want you to follow its instructions. The full skill content is loaded below.]"
+    )
+    session = _session(
+        profile_source=True,
+        history=[
+            {"role": "user", "content": scaffolded},
+            {"role": "assistant", "content": "Chào bạn"},
+        ],
+    )
+    monkeypatch.setattr(server, "_get_db", lambda: None)
+
+    history = server._format_live_history_output(session)
+    context = server._format_live_context_output(session)
+
+    assert "[IMPORTANT:" not in history
+    assert "[IMPORTANT:" not in context
+    assert "Chào bạn" in history
+    assert "user: 0" in context
+    assert "assistant: 1" in context
+
+
 def test_expand_skill_invocation_for_replay_round_trips_the_projection(
     tmp_path, monkeypatch
 ):

@@ -1,3 +1,189 @@
+# AGENTS.md — Super Agent
+
+> File này dành cho Codex và Hermes Agent desktop (executor). Đọc trước khi làm bất kỳ việc gì trong dự án này.
+> Nếu bạn là Architect (Claude/Cowork) — đây không phải file vận hành của bạn, xem `INSTRUCTION-PROJECT.md`.
+
+---
+
+## Bối cảnh dự án trong 3 câu
+
+Super Agent = bản phân phối desktop của Hermes Agent (Nous Research, MIT) cho người dùng phổ thông Việt Nam, kèm huấn luyện viên AI tên "Siêu trợ lý". Bán **năng lực sử dụng**, không bán phần mềm — sản phẩm ~70% là nội dung (skill, prompt ngầm, quy ước), ~30% là phần mềm (vỏ giao diện). Thu phí một lần, người dùng tự cài, tự dùng API key của mình.
+
+---
+
+## Vai trò của bạn
+
+Bạn là **executor**, không phải người quyết định kiến trúc hay phạm vi sản phẩm.
+
+| Ai | Vai trò |
+|---|---|
+| Codex | Executor chính — viết/sửa code TypeScript, React, plugin, cấu hình build; chạy lệnh build/test |
+| Hermes Agent desktop | Executor phụ — việc ad-hoc, thử nghiệm nhanh, việc lặt vặt ngoài repo |
+| Claude / Cowork (Architect) | Đọc code, viết spec, giao việc qua file TASK TRIGGER — không tự viết code sản phẩm |
+| Tuan | Chủ dự án — quyết định thương hiệu, chạy installer thật, mua chứng chỉ ký số, duyệt mọi task |
+
+---
+
+## Việc bị cấm tuyệt đối
+
+- Sửa file ngoài phạm vi đã ghi trong plan đã duyệt
+- Viết code trước khi plan được Architect duyệt (chưa thấy dòng `ĐÃ DUYỆT` ở đầu file plan)
+- Tự chuyển sang task khác khi task hiện tại chưa xong
+- Tự lật bất kỳ quyết định nào trong mục "Quyết định khoá cứng" dưới đây
+- Chạm vào `C:\Users\Minh Tuấn\AppData\Local\hermes\` — đây là bản Hermes Desktop **thật, đang chạy hàng ngày**, không phải môi trường build/test
+- Liên hệ hoặc sửa bất kỳ thứ gì thuộc dự án Marka (Supabase khác, "Hermes Server" khác — trùng tên nhưng không liên quan kỹ thuật)
+- Mở cơ chế nạp plugin runtime cho bên thứ ba
+- Ghi đè bất kỳ file nào đã tồn tại trong `SOURCE-CODE/` mà chưa đọc thử nội dung cũ — nếu file đích đã có nội dung thật (không rỗng, không placeholder), dừng lại báo Architect thay vì tự ghi đè (bài học từ vụ `AGENTS.md` upstream bị ghi đè nhầm ngày 2026-08-13, xem `_evidence/02-agents-md-fix.md`)
+
+---
+
+## Quyết định khoá cứng — không tự đổi
+
+1. **Fork `apps/desktop` của `NousResearch/hermes-agent`** — không dùng `fathah/hermes-desktop`.
+2. **Tag/version đang pin:** luôn lấy giá trị mới nhất ghi trong `_evidence/01-commit-sha.txt`, KHÔNG lấy từ trí nhớ hay từ bản cũ của `PROJECT-BRIEF.md`/`BUILD-PLAN.md` nếu 2 nguồn lệch nhau — báo Architect ngay khi phát hiện lệch.
+3. **Plugin bundled cứng lúc build** — không mở cơ chế nạp plugin runtime cho bên thứ ba.
+4. **Chạm core ít nhất có thể.** 2 điểm chạm đã biết: `apps/desktop/src/app/routes.ts` (route mặc định — KHÔNG phải `contrib/routes.ts`) và cơ chế ẩn `/skills` (đang chờ Verify — xem `BUILD-PLAN.md` task `BP-11`).
+   - **Route mặc định — đã xác nhận đúng qua BP-10 (2 lần thử):** đổi `view` của entry `'new'` trong `APP_ROUTES` KHÔNG đủ — `appViewForPath()` có guard `isNewChatRoute(path) || routeSessionId(path)` chặn trước khi tra `APP_VIEW_BY_PATH`, nên path gốc `'/'` luôn trả `'chat'` bất kể `APP_ROUTES` ghi gì. Cách đúng đã verify bằng unit test thật: đổi `view: 'command-center'` ở entry `'new'` **và** bỏ `isNewChatRoute(path) ||` khỏi guard đó (chỉ giữ `routeSessionId(path)` để route session thật vẫn ép `'chat'`). Chi tiết: `REPORT_BP-10-2026-08-14.md`, `task_blocks/PLAN_BP-10-v2.md`. Bài học: đừng tin "đổi 1 dòng" chỉ vì thấy giá trị đúng trong `APP_ROUTES` — luôn lần theo hàm resolve thật (`appViewForPath`) trước khi kết luận.
+5. **An toàn file:** chỉ tạo mới hoặc copy. Không bao giờ tự di chuyển file có sẵn của người dùng.
+6. **Git tự quản bởi executor (quyết định Tuan 2026-09-02 — thay quy tắc cũ "cấm git commit/push"):** Codex được tự `git add`/`commit`/`push`/quản lý nhánh trong đúng phạm vi plan đã duyệt — Codex có sẵn công cụ git built-in tốt hơn, không cần Architect làm thay nữa. Áp dụng cho mọi task từ 2026-09-02. Vẫn phải: chỉ commit đúng phạm vi plan đã duyệt (không gộp việc ngoài scope vào 1 commit), ghi rõ trong báo cáo kết quả đã commit gì/push tới đâu, không `--force` lên nhánh chia sẻ (`fork`) mà không hỏi Architect/Tuan trước.
+6. **Nhánh phát hành:** `main` của fork `tuannguyenngocminh/hermes-agent` là nhánh phát hành chính thức. Nút Update trong app hardcode `origin/main` (`hermes_cli/banner.py`, `web_server.py`) — không sửa code để đổi việc này. Mọi lần build bản cài đặt để phát hành phải merge hết fix đã duyệt vào `main` trước khi build.
+
+**Lưu ý bảo mật:** Hermes Desktop Plugin là trusted code chạy với quyền rộng của app, **không phải ranh giới bảo mật**. Đừng mô tả bất kỳ cơ chế nào (kể cả allowlist 4 tác vụ của Siêu trợ lý) như một sandbox.
+
+---
+
+## LUẬT 2 KHO GIT — CHỐT 2026-09-12, KHÔNG BÀN LẠI
+
+Project có **2 kho Git riêng biệt, lồng theo thư mục nhưng KHÔNG liên quan nhau về nội dung**. Nhầm kho là lỗi nghiêm trọng — đã từng xảy ra (xem "Bối cảnh" cuối mục).
+
+| | **Kho 1 — đồng bộ project** | **Kho 2 — repo thật của phần mềm** |
+|---|---|---|
+| Đường dẫn | `D:\CALUDE WORKSPACE\PHAN MEM\Super Agent\` | `…\Super Agent\SOURCE-CODE\hermes-agent\` |
+| Remote | `origin` → `tuannguyenngocminh/Super-Agent.git` | `fork` → `tuannguyenngocminh/hermes-agent.git` (ĐÚNG) · `upstream-readonly` → `NousResearch/hermes-agent.git` (**CHỈ ĐỌC, cấm push**) |
+| Nhánh chính | `main` | `main` (= nhánh phát hành, app tự Update lấy từ đây) |
+| Mục đích | Mở máy khác lên là có đủ **kế hoạch, tài liệu, bằng chứng** để làm việc tiếp | Nguồn sự thật **duy nhất** của mã nguồn phần mềm Super Agent |
+| Chứa | `*.md` ở gốc (`BUILD-PLAN.md`, `PROJECT-BRIEF.md`, `CLAUDE.md`…), `task_blocks/`, `_evidence/`, `skills/`, `Super Agent Design System Final/`, `_tools/` | Toàn bộ `apps/`, `packages/`, plugin `super-agent-*`, asset/skill bundled, test, cấu hình build, `AGENTS.md` |
+| KHÔNG chứa | **Không chứa code app** — `SOURCE-CODE/` nằm trong `.gitignore` của Kho 1 | Không chứa BUILD-PLAN, plan, evidence, tài liệu kế hoạch |
+
+### 6 luật vàng
+
+1. **Code app → Kho 2. Kế hoạch/tài liệu/bằng chứng → Kho 1.** Không có ngoại lệ, không có file "thuộc cả hai".
+2. **Trước mọi `git add`/`commit`/`push`:** chạy `git rev-parse --show-toplevel` + `git remote -v`, xác nhận đúng kho, **dán raw output vào báo cáo**. Không suy đoán theo tên remote (`origin` ở Kho 2 không tồn tại; `fork` ở Kho 1 không tồn tại).
+3. **Không để file mới ở trạng thái untracked khi đóng task.** Task nào tạo file mới trong Kho 2 (kể cả file test, asset, file phụ trợ) thì **chính task đó** phải `git add` đường dẫn cụ thể của file đó và commit. Không đẩy việc "baseline" sang task sau.
+4. **Không `git add .` / `git add -A`** trong task thường — luôn liệt kê đường dẫn cụ thể trong plan và stage đúng từng đường dẫn đó.
+5. **Kiểm tra bắt buộc cuối mỗi task chạm code Kho 2**, dán vào báo cáo:
+   - `git status --porcelain --untracked-files=all -- apps` → **không còn dòng `??` nào**
+   - `git log --oneline -1` (SHA commit) và `git push fork main` (exit code)
+6. **Không đụng Kho 2 trong task tài liệu, không đụng Kho 1 trong task code.** Một task chạm cả hai chỉ khi Architect ghi rõ trong plan.
+
+### Line ending (liên quan trực tiếp, không tách rời)
+
+- Giữ `core.autocrlf=true` trên Windows — **không đổi** config global của máy.
+- File nội dung được import qua Vite `?raw` phải có `.gitattributes` **scoped** chứa `*.md text eol=lf` đặt **trong đúng thư mục plugin** (tiền lệ `BP-82`, `BP-87`). **Cấm** đặt rule `*.md` ở gốc repo hoặc ở `apps/desktop/src/plugins/` (sẽ normalize file upstream ngoài scope).
+- Dấu hiệu sai config: khi `git add`, `git diff --cached --stat` hiện hàng nghìn file "đổi" mà nội dung không đổi → **dừng lại**, đó là nhiễu CRLF, không phải thay đổi thật.
+
+### Máy mới — setup đúng 2 lệnh
+
+```
+git clone https://github.com/tuannguyenngocminh/Super-Agent.git "Super Agent"
+git clone https://github.com/tuannguyenngocminh/hermes-agent.git "Super Agent/SOURCE-CODE/hermes-agent"
+```
+
+### Bối cảnh (vì sao có luật này)
+
+Trước 2026-09-12, Kho 1 track một **bản copy phẳng** của `SOURCE-CODE/` (8.449 file). Hệ quả thực tế đã xảy ra: mọi commit BP gần đây (BP-82, BP-86…) đi vào Kho 1, Kho 2 đứng yên từ 17/08/2026 và `fork/main` **không có** thư mục plugin `super-agent-*` nào; 60 file code thật (toàn bộ plugin `super-agent-memory`, `super-agent-dashboard`, `super-agent-capabilities`, `super-agent-advanced`, các file `electron/*-setup.ts`, onboarding…) không nằm trong bất kỳ kho nào — chỉ tồn tại trên ổ đĩa. Tuan chốt 2026-09-12: **Kho 1 ngừng track `SOURCE-CODE/` hoàn toàn**, mỗi kho một vai trò như bảng trên.
+
+---
+
+## Quy tắc bằng chứng
+
+Mọi khẳng định kỹ thuật trong report gửi lại Architect phải đánh dấu 1 trong 3 trạng thái:
+
+- **Đã xác nhận** — có lệnh/source cụ thể chứng minh.
+- **Đã quyết định** — quyết định sản phẩm của Tuan, không cần chứng minh kỹ thuật.
+- **Chưa xác nhận** — ghi rõ cần verify gì, bằng lệnh nào, điều kiện pass/fail là gì.
+
+Số dòng file trong `RESEARCH-REPORT-FINAL.md` chỉ là **gợi ý tìm kiếm**, không phải chân lý — luôn đọc lại tại source đã checkout thật trước khi khẳng định.
+
+---
+
+## Mức bằng chứng runtime — khi nào cần ảnh, khi nào không (chốt 2026-08-14)
+
+Ảnh chụp màn hình chỉ chứng minh "lúc chụp trông có vẻ đúng" — không lặp lại được, không tự động hoá được, và Codex hiện không tự mở được cửa sổ Electron ổn định để tự chụp (đã thấy ở BP-08, BP-09: GPU crash / port race). Vì vậy **không mặc định bắt ảnh cho mọi task có runtime**. Ưu tiên bằng chứng lập trình được trước:
+
+1. **Có sẵn cơ chế test trong repo — dùng nó trước tiên.** Ví dụ `apps/desktop/src/components/pane-shell/tree/floating-adoption.test.ts` verify pane floating bằng `model.allPaneIds()`/`$layoutTree` mà không cần mở app thật. Route mapping có thể assert trực tiếp `APP_VIEW_BY_PATH.get(path)` bằng unit test. Luôn tìm pattern test tương tự trong checkout trước khi đề xuất chụp ảnh.
+2. **Mức thường — PoC nội bộ, logic/wiring, task cỡ nhỏ/vừa không phải UI cuối cùng:** diff đúng phạm vi + `npm run build` PASS + unit test (nếu viết được theo pattern có sẵn) là đủ bằng chứng. Không bắt ảnh, không cần Tuan chạy tay.
+3. **Mức cao — UI/UX thật sự quan trọng, nơi cảm quan thẩm mỹ/trải nghiệm là một phần tiêu chí xong:** vẫn cần ảnh/video, thường do Tuan tự chạy tay xác nhận. Áp dụng cho: ẩn/hiện `/skills` khỏi điều hướng (`BP-11`), giao diện B2 hoàn chỉnh (`BP-23`), mọi task thuộc gate M0-B (release-readiness), và bất kỳ chỗ nào Architect ghi rõ trong plan là cần ảnh.
+4. Nếu không chắc task thuộc mức nào, mặc định chọn mức thường (không bắt ảnh) và nêu rõ trong plan lý do — Architect sẽ yêu cầu nâng mức nếu thấy cần khi duyệt.
+5. **Ngoại lệ bắt buộc mức cao (bổ sung 2026-08-14, bài học từ BP-10):** mọi thay đổi đụng tới `appViewForPath`, `isNewChatRoute`, `routeSessionId`, cơ chế overlay (`OVERLAY_VIEWS`, `use-overlay-routing.ts`, `use-route-overlay-active.ts`), hoặc bất kỳ hàm resolve view/route dùng chung nào khác — **luôn bắt buộc runtime click-through thật**, không được chỉ dựa vào unit test dù task nhỏ. Lý do: BP-10 lần 2 unit test PASS 7/7 nhưng runtime thật bị kẹt vô hạn (đổi route gốc sang một overlay view làm mất "điểm quay về" của toàn bộ hệ thống đóng overlay) — unit test kiểm đúng hàm bị cô lập, không bắt được tương tác giữa các hệ thống dùng chung. Khi sửa loại code này: phải mở app cô lập, thao tác mở/đóng ít nhất 1 overlay thật (settings hoặc command-center), xác nhận đóng được bình thường, không kẹt lặp — trước khi báo PASS.
+
+---
+
+## Cách bạn tự nhận việc (chủ động — không chờ Architect soạn trigger)
+
+1. Đọc `BUILD-PLAN.md` — bảng task ở mục 5 là **nguồn sự thật duy nhất về tiến độ**. Tìm task tiếp theo hợp lệ: đúng thứ tự cột "Phụ thuộc", tôn trọng gate M0-A (chặn hầu hết task code) và M0-B (chặn riêng phát hành). Không tự nhảy cóc qua task chưa đủ điều kiện.
+2. Tự viết một bản kế hoạch (plan) cho task đó, lưu vào `task_blocks/PLAN_<ID>.md`. Plan cần nêu: sẽ làm gì, chạm file/đường dẫn nào, tiêu chí xong (lấy đúng từ cột "Tiêu chí xong" của task đó trong `BUILD-PLAN.md`, không tự đặt tiêu chí khác).
+3. Báo lại đường dẫn file plan cho Architect — **dừng ở đây, chưa viết code**.
+4. Chờ dòng `ĐÃ DUYỆT — <ngày>` ở đầu file plan. Nếu Architect yêu cầu sửa, sửa lại plan — không tự quyết viết code khi chưa có dòng duyệt.
+5. Sau khi có `ĐÃ DUYỆT`, viết code đúng theo phạm vi đã ghi trong plan — không tự mở rộng, không tự "tiện thể sửa luôn" chỗ khác.
+6. Backup (Git hoặc ZIP) **trước khi ghi đè bất kỳ file nào trong `SOURCE-CODE/`** — bắt buộc.
+7. Viết báo cáo kết quả — cập nhật vào cuối file `PLAN_<ID>.md`, hoặc file `CURRENT_REPORT.md` riêng nếu task lớn — theo đúng bằng chứng đã tự đề ra ở bước 2.
+8. Nếu gặp việc không có trong plan đã duyệt nhưng có vẻ cần làm — dừng lại, báo Architect, không tự quyết.
+9. Không tự sửa `BUILD-PLAN.md` — kể cả khi nội dung đúng. Chỉ Architect cập nhật file này sau khi duyệt plan hoặc nhận báo cáo kết quả.
+
+---
+
+## Tài liệu nên đọc thêm (theo thứ tự ưu tiên)
+
+1. `PROJECT-BRIEF.md` — nguồn sự thật về sản phẩm
+2. `BUILD-PLAN.md` — bảng task, nguồn sự thật duy nhất về tiến độ
+3. `RESEARCH-REPORT-FINAL.md` — tra cứu bằng chứng kỹ thuật khi cần (không đọc toàn văn mỗi lần)
+4. `INSTRUCTION-PROJECT.md` — quy tắc vận hành đầy đủ (dành cho Architect, đọc để hiểu bối cảnh)
+
+---
+
+## Cách chạy dev Super Agent — cô lập khỏi Hermes daily (đã verify 2026-08-13)
+
+Hermes daily (`C:\Users\Minh Tuấn\AppData\Local\hermes\`) chạy song song hàng ngày, chiếm sẵn `127.0.0.1:5174` (renderer) và CDP `9222`. Checkout Super Agent **phải luôn dùng port khác** — không đổi lại về `5174`, không tự thêm biến môi trường/port khác ngoài các giá trị dưới đây.
+
+**Port cố định của checkout Super Agent — literal, không phải biến cấu hình:**
+- Renderer dev (Vite): `127.0.0.1:5175` — set cứng trong `apps/desktop/package.json` (`dev:renderer`, `dev:electron`, `profile:main`, `profile:main:cpu`), `apps/desktop/vite.config.ts` (`server.port`), `apps/desktop/scripts/dev-no-hmr.mjs`. Chi tiết đủ 17 file đã đổi: `task_blocks/PLAN_BP-05-port-isolation.md`.
+- Preview: `4174` — không đổi, không trùng gì với daily.
+- CDP debug: khi test song song với daily, set `HERMES_DESKTOP_CDP_PORT=off` để tắt hẳn CDP của checkout Super Agent — **không** cố đổi sang port khác, cứ tắt là đơn giản nhất và không đụng gì tới daily.
+
+**Biến môi trường bắt buộc để cô lập profile/user-data khỏi daily (không set = có nguy cơ ghi đè dữ liệu daily):**
+```
+HERMES_HOME=<đường dẫn riêng, ví dụ _evidence\bp-05\hermes-home>
+HERMES_DESKTOP_USER_DATA_DIR=<đường dẫn riêng, ví dụ _evidence\bp-05\electron-user-data>
+HERMES_DESKTOP_HERMES_ROOT=<thường trùng HERMES_HOME>
+HERMES_DESKTOP_APP_NAME=<tên riêng, khác "Hermes">
+HERMES_DESKTOP_DISABLE_GPU=1
+ELECTRON_DISABLE_SANDBOX=1
+HERMES_DESKTOP_CDP_PORT=off
+```
+
+**Node/npm:** không dùng Node global `v25.9.0` — dùng Node portable `v26.7.0` + npm `11.19.0` tại `_tools\node-v26.7.0-win-x64\` (lý do: xem `BP-04` trong `BUILD-PLAN.md`).
+
+**Cách chạy nhanh (đã có sẵn, không cần viết lại):** `_evidence\bp-05-port-isolation\run-port-isolation-final.cmd` — set đủ các biến trên rồi `npm run dev` từ `SOURCE-CODE\hermes-agent\apps\desktop`. Chạy trực tiếp bằng double-click, không cần sửa gì thêm.
+
+**First-run setup:** app mở lên sẽ dừng ở màn hình chọn model provider ("Let's get you setup with Hermes Agent"). Để test nhanh không cần cấu hình thật, bấm **"I'll choose a provider later"** — vào thẳng màn hình chính, không cần tài khoản Nous Portal hay API key thật.
+
+**Bẫy đã gặp — tránh lặp lại:** ghi file bằng công cụ không giữ nguyên line ending gốc (LF) sẽ biến toàn bộ file port thành CRLF, khiến `git diff` đánh dấu nhầm toàn file dù nội dung chỉ đổi 1-2 dòng. Luôn kiểm tra `git diff --numstat` sau khi sửa các file port này khớp đúng số dòng dự kiến trong plan (không phải full file), và `CR=0` khi chạy `tr -cd '\r' < <file> | wc -c`.
+
+---
+
+## Version hiện tại
+
+*(điền sau khi `BP-02` chạy xong — commit SHA thật, tag/release thật, ngày giờ đã clone)*
+
+# ⬇ Nội dung gốc từ upstream `NousResearch/hermes-agent` (tag v2026.8.3) — GIỮ NGUYÊN, không sửa
+
+> Đây là `AGENTS.md` gốc do Nous Research viết cho chính codebase này (kiến trúc, quy tắc contribution, coding convention).
+> Bị ghi đè nhầm khi thực thi `TASK_TRIGGER_BP-02.txt` (copy nguyên văn bản Super Agent đè lên, không kiểm tra file đích đã có nội dung).
+> Khôi phục nguyên văn từ `git show HEAD:AGENTS.md` ngày 2026-08-13 — nối lại phía dưới để Codex vẫn có đủ ngữ cảnh kỹ thuật của upstream khi làm việc trong repo này.
+
+---
+
 # Hermes Agent - Development Guide
 
 Instructions for AI coding assistants and developers working on the hermes-agent codebase.

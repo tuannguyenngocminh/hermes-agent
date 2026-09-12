@@ -2086,6 +2086,24 @@ def _path_is_under(root: Path, target: Path) -> bool:
     return target == root or root in target.parents
 
 
+def _resolve_workspace_path(root_raw: str | None, relative_raw: str | None) -> tuple[Path, Path]:
+    """Resolve a workspace-relative target without inheriting managed-files policy."""
+    root = _canonical_path(Path(_path_text(root_raw)), require_exists=True)
+    if not root.is_dir():
+        raise HTTPException(status_code=400, detail="Workspace root is not a directory")
+
+    relative = _path_text(relative_raw)
+    relative_path = Path(relative)
+    if not relative or relative_path.is_absolute() or ".." in relative_path.parts:
+        raise HTTPException(status_code=400, detail="Workspace path must stay under the workspace root")
+
+    target = (root / relative_path).resolve()
+    if not _path_is_under(root, target):
+        raise HTTPException(status_code=400, detail="Workspace path must stay under the workspace root")
+
+    return root, target
+
+
 def _path_text(raw_path: str | None) -> str:
     text = str(raw_path or "").strip()
     if "\x00" in text:
@@ -2567,6 +2585,41 @@ async def create_managed_directory(payload: ManagedDirectoryCreate, request: Req
         "path": display_path,
         **_managed_response_meta(policy),
     }
+
+
+@app.post("/api/workspace/mkdir")
+async def create_workspace_directory(payload: Dict[str, Any]):
+    _root, target = _resolve_workspace_path(payload.get("root"), payload.get("path"))
+    if target.exists() and not target.is_dir():
+        raise HTTPException(status_code=409, detail="A file already exists at that path")
+    existed = target.exists()
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Workspace directory is not writable")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not create workspace directory: {exc}")
+    return {"ok": True, "status": "skipped" if existed else "created", "path": str(target)}
+
+
+@app.post("/api/workspace/write-text-safe")
+async def write_workspace_text_safe(payload: Dict[str, Any]):
+    _root, target = _resolve_workspace_path(payload.get("root"), payload.get("path"))
+    content = str(payload.get("content") or "")
+    if len(content) > 1_000_000:
+        raise HTTPException(status_code=413, detail="Content too large")
+    if not target.parent.is_dir():
+        raise HTTPException(status_code=400, detail="Parent directory does not exist")
+    try:
+        with target.open("x", encoding="utf-8", newline="") as handle:
+            handle.write(content)
+    except FileExistsError:
+        raise HTTPException(status_code=409, detail="File already exists")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Workspace file is not writable")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not write workspace file: {exc}")
+    return {"ok": True, "status": "created", "path": str(target)}
 
 
 @app.delete("/api/files")

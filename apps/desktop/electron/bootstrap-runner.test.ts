@@ -81,17 +81,17 @@ test('existing checkout detection requires git metadata', () => {
   }
 })
 
-test('fresh bootstrap args include the packaged commit pin', () => {
-  const installStamp = { commit: 'a'.repeat(40), branch: 'main' }
+test('fresh bootstrap args pin the commit without requiring its stamped branch', () => {
+  const installStamp = { commit: 'a'.repeat(40), branch: 'super-agent/build-v2026.8.3' }
 
-  assert.deepEqual(buildPinArgs(installStamp), ['-Commit', installStamp.commit, '-Branch', 'main'])
+  assert.deepEqual(buildPinArgs(installStamp), ['-Commit', installStamp.commit])
   assert.deepEqual(
     buildPosixPinArgs({
       installStamp,
       activeRoot: '/tmp/hermes-agent',
       hermesHome: '/tmp/hermes'
     }),
-    ['--dir', '/tmp/hermes-agent', '--hermes-home', '/tmp/hermes', '--branch', 'main', '--commit', installStamp.commit]
+    ['--dir', '/tmp/hermes-agent', '--hermes-home', '/tmp/hermes', '--commit', installStamp.commit]
   )
 })
 

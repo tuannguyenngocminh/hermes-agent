@@ -42,6 +42,8 @@ import { rcedit } from 'rcedit'
 
 import { isMain } from './utils.mjs'
 
+const APP_DISPLAY_NAME = 'Super Agent'
+
 // Stamp the Hermes icon + identity onto `exe`. Resolves on success, throws on
 // failure. `desktopRoot` defaults to this script's package root so the icon and
 // the rcedit dependency resolve regardless of cwd.
@@ -62,8 +64,8 @@ async function stampExeIdentity(exe, desktopRoot = resolve(import.meta.dirname, 
   await rcedit(exe, {
     icon,
     'version-string': {
-      ProductName: 'Hermes',
-      FileDescription: 'Hermes',
+      ProductName: APP_DISPLAY_NAME,
+      FileDescription: APP_DISPLAY_NAME,
       CompanyName: 'Nous Research',
       LegalCopyright: 'Copyright (c) 2026 Nous Research'
     }

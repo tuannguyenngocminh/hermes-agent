@@ -55,7 +55,7 @@ htui() {
 
 ## `hgui` — desktop app from the worktree
 
-The desktop app is heavier: it needs `node_modules` at both the repo root and `apps/desktop/`, a Vite dev server pinned to port `5174`, and a Python backend. `hgui` wires all of it against the current worktree:
+The desktop app is heavier: it needs `node_modules` at both the repo root and `apps/desktop/`, a Vite dev server pinned to port `5175`, and a Python backend. `hgui` wires all of it against the current worktree:
 
 ```bash
 hgui() {
@@ -72,8 +72,8 @@ hgui() {
     ( cd "$root" && npm ci ) || return 1
   fi
 
-  # Vite is fixed at 5174 — evict a stale session from another hgui.
-  lsof -t -i:5174 >/dev/null 2>&1 && killport 5174
+  # Vite is fixed at 5175 — evict a stale session from another hgui.
+  lsof -t -i:5175 >/dev/null 2>&1 && killport 5175
 
   # Electron often survives Ctrl+C without reaping its ephemeral backends.
   trap '_hermes_gui_cleanup "$root"' INT TERM EXIT
@@ -99,8 +99,8 @@ The desktop env vars it sets are all real backend-resolution knobs:
 
 Two footguns `hgui` handles that a bare `npm run dev` does not:
 
-- **Port `5174` is fixed.** A second `hgui` collides with the first's Vite server; the helper kills the stale one first.
-- **Orphaned children.** Electron frequently survives `Ctrl+C` through `concurrently` without reaping the ephemeral `dashboard --port 0` backend or the Vite process. The `EXIT`/`INT`/`TERM` trap runs a cleanup that terminates the Electron shell, the `:5174` listener, and any `--port 0` dashboard it spawned.
+- **Port `5175` is fixed.** A second `hgui` collides with the first's Vite server; the helper kills the stale one first.
+- **Orphaned children.** Electron frequently survives `Ctrl+C` through `concurrently` without reaping the ephemeral `dashboard --port 0` backend or the Vite process. The `EXIT`/`INT`/`TERM` trap runs a cleanup that terminates the Electron shell, the `:5175` listener, and any `--port 0` dashboard it spawned.
 
 ## Shared helpers
 
@@ -125,7 +125,7 @@ _hermes_link_deps() {
 _hermes_gui_cleanup() {
   local root="$1"
   [[ -n "$root" ]] && pkill -TERM -f "${root}/apps/desktop/node_modules/electron" 2>/dev/null
-  lsof -t -i:5174 >/dev/null 2>&1 && killport 5174
+  lsof -t -i:5175 >/dev/null 2>&1 && killport 5175
   pgrep -f 'hermes_cli\.main.*dashboard.*--port 0' 2>/dev/null | xargs -r kill -TERM 2>/dev/null
 }
 ```

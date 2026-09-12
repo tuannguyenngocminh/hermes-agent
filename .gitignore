@@ -194,3 +194,10 @@ native/fts5_cjk/*.so
 # interrupted; consumed by launch-time recovery. Never commit it (was tracked
 # by accident via 3a69e34702, removed in the #72002 salvage).
 .lazy-refresh-incomplete
+
+# --- Super Agent (GIT-01, 2026-09-12) ---
+# Knowledge graph sinh tự động, dựng lại bằng `graphify build .` — không commit
+/graphify-out/
+/.graphify-deps/
+# Bằng chứng task thuộc Kho 1 theo LUẬT 2 KHO GIT — không commit vào kho code
+/_evidence/

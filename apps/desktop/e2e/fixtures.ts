@@ -212,7 +212,7 @@ function writeEmptyConfig(hermesHome: string): void {
  * Build the environment for the Electron app process.
  *
  * Key env vars:
- *  - HERMES_HOME → sandbox hermes-home (isolated config/sessions)
+ *  - SUPER_AGENT_HOME → sandbox super-agent home (isolated config/sessions)
  *  - HERMES_DESKTOP_USER_DATA_DIR → sandbox electron-user-data
  *  - HERMES_DESKTOP_IGNORE_EXISTING=1 → don't pick up `hermes` from PATH
  *    (we want the dev checkout at REPO_ROOT)
@@ -236,7 +236,7 @@ export function buildAppEnv(sandbox: Sandbox, extra: Record<string, string> = {}
 
   return {
     ...clean,
-    HERMES_HOME: sandbox.hermesHome,
+    SUPER_AGENT_HOME: sandbox.hermesHome,
     HERMES_DESKTOP_USER_DATA_DIR: sandbox.userDataDir,
     HERMES_DESKTOP_IGNORE_EXISTING: '1',
     HERMES_DESKTOP_HERMES_ROOT: REPO_ROOT,
@@ -310,8 +310,8 @@ export function findElectron(): string {
 /**
  * Launch the desktop app in dev mode.
  *
- * @param sandbox  - isolated HERMES_HOME + userData
- * @param env      - the process environment (already has HERMES_HOME etc.)
+ * @param sandbox  - isolated Super Agent home + userData
+ * @param env      - the process environment (already has SUPER_AGENT_HOME etc.)
  * @returns the ElectronApplication + first Page
  */
 export async function launchDesktop(
@@ -509,7 +509,7 @@ providers:
  */
 function resolvePackagedBinaryPath(): string {
   if (process.platform === 'win32') {
-    return path.join(RELEASE_ROOT, 'win-unpacked', 'Hermes.exe')
+    return path.join(RELEASE_ROOT, 'win-unpacked', 'SuperAgent.exe')
   }
 
   if (process.platform === 'darwin') {
@@ -540,7 +540,7 @@ export interface PackagedAppFixture {
  * progress without spawning a real Hermes backend.
  *
  * Uses the same sandbox isolation (credential stripping, isolated
- * HERMES_HOME + userData, unique app name) as the dev-mode fixtures.
+ * SUPER_AGENT_HOME + userData, unique app name) as the dev-mode fixtures.
  *
  * Skips if the packaged binary doesn't exist — run `npm run pack` first.
  */

@@ -19,7 +19,7 @@ try {
   process.exit(1)
 }
 
-const t = targets.find((t) => t.url.includes('5174')) ?? targets.find((t) => t.type === 'page')
+const t = targets.find((t) => t.url.includes('5175')) ?? targets.find((t) => t.type === 'page')
 
 if (!t) {
   console.error(`no page target on 127.0.0.1:${port} (found ${targets.length} target(s))`)

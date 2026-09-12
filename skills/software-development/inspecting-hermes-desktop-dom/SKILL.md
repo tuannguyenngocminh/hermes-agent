@@ -79,7 +79,7 @@ promise-aware eval:
 ```js
 import { CDP, SELECTORS } from './scripts/perf/lib/cdp.mjs'
 
-const cdp = await CDP.connect({ port: 9222, match: '5174' })
+const cdp = await CDP.connect({ port: 9222, match: '5175' })
 const out = await cdp.eval(`JSON.stringify({
   radius: getComputedStyle(document.documentElement).getPropertyValue('--radius-scalar').trim(),
   composer: !!document.querySelector('[data-slot="composer-rich-input"]')
@@ -123,7 +123,7 @@ When there is no port, or you must not disturb the user's window:
 ```bash
 cd apps/desktop
 HERMES_HOME=/tmp/cdp-probe-home \
-HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 \
+HERMES_DESKTOP_DEV_SERVER=http://127.0.0.1:5175 \
 HERMES_DESKTOP_CDP_PORT=9333 \
   npx electron . --user-data-dir=/tmp/cdp-probe-userdata
 ```

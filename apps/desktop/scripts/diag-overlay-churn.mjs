@@ -28,7 +28,7 @@ async function getRendererTarget() {
   const resp = await fetch('http://127.0.0.1:9222/json/list')
   const targets = await resp.json()
   // Find the renderer target (not devtools)
-  return targets.find(t => t.url?.startsWith('http://127.0.0.1:5174') || t.url?.includes('5174'))
+  return targets.find(t => t.url?.startsWith('http://127.0.0.1:5175') || t.url?.includes('5175'))
     ?? targets.find(t => t.type === 'page' && !t.url.startsWith('devtools'))
 }
 

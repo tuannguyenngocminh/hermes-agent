@@ -11,7 +11,7 @@
 import { startIsolatedInstance } from './lib/launch.mjs'
 
 const port = Number(process.env.PERF_PORT ?? 9222)
-const devPort = Number(process.env.PERF_DEV_PORT ?? 5174)
+const devPort = Number(process.env.PERF_DEV_PORT ?? 5175)
 
 console.log(`[perf:serve] starting isolated instance (CDP :${port}, dev :${devPort})…`)
 

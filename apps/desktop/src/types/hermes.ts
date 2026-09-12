@@ -583,6 +583,8 @@ export interface SessionResumeResponse {
   }
   inflight?: null | {
     assistant?: string
+    /** Display metadata for the in-flight user row, when the gateway carries it. */
+    display_kind?: string
     /** Mid-turn redirect corrections, oldest first. The turn's original prompt
      *  stays in `user`; these are the follow-ups typed while it ran. */
     corrections?: string[]

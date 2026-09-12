@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isProviderSetupErrorMessage } from './provider-setup-errors'
+import { isOpenAICodexQuotaErrorMessage, isProviderSetupErrorMessage } from './provider-setup-errors'
 
 describe('isProviderSetupErrorMessage', () => {
   it('matches generic missing-provider copy', () => {
@@ -40,5 +40,19 @@ describe('isProviderSetupErrorMessage', () => {
     expect(isProviderSetupErrorMessage('')).toBe(false)
     expect(isProviderSetupErrorMessage(null)).toBe(false)
     expect(isProviderSetupErrorMessage(undefined)).toBe(false)
+  })
+})
+
+describe('isOpenAICodexQuotaErrorMessage', () => {
+  it('recognizes quota and rate-limit failures only for openai-codex', () => {
+    expect(isOpenAICodexQuotaErrorMessage('You exceeded your current quota.', 'openai-codex')).toBe(true)
+    expect(isOpenAICodexQuotaErrorMessage('Too many requests. Please try again later.', 'openai-codex')).toBe(true)
+    expect(isOpenAICodexQuotaErrorMessage('HTTP 429 rate_limit_exceeded', 'openai-codex')).toBe(true)
+  })
+
+  it('does not classify unrelated providers or non-quota failures', () => {
+    expect(isOpenAICodexQuotaErrorMessage('You exceeded your current quota.', 'openrouter')).toBe(false)
+    expect(isOpenAICodexQuotaErrorMessage('OAuth callback failed.', 'openai-codex')).toBe(false)
+    expect(isOpenAICodexQuotaErrorMessage('', 'openai-codex')).toBe(false)
   })
 })

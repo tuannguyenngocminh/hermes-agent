@@ -98,6 +98,10 @@ def _(rid, params: dict) -> dict:
             "create_service_tier_override": create_service_tier_override,
             "parent_session_id": parent_session_id,
             "pending_title": title or None,
+            # The profile-source conversation needs its single bundled write
+            # tool even when the active workspace has narrowed Desktop to the
+            # coding toolsets. Do not accept arbitrary toolset names here.
+            "profile_source": is_truthy_value(params.get("profile_source", False)),
             "profile_home": str(profile_home) if profile_home is not None else None,
             "running": False,
             "session_key": key,
@@ -130,7 +134,9 @@ def _(rid, params: dict) -> dict:
             "session_id": sid,
             "stored_session_id": key,
             "message_count": len(history),
-            "messages": _history_to_messages(history),
+            "messages": _history_to_messages(
+                history, profile_source=bool(_sessions[sid].get("profile_source"))
+            ),
             "info": {
                 # Reflect the per-session model override (desktop composer pick)
                 # in the immediate response so the client doesn't briefly clobber
@@ -2299,7 +2305,9 @@ def _(rid, params: dict) -> dict:
         rid,
         {
             "count": len(history),
-            "messages": _history_to_messages(history),
+            "messages": _history_to_messages(
+                history, profile_source=bool(session.get("profile_source"))
+            ),
         },
     )
 

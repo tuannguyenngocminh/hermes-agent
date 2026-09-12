@@ -466,7 +466,11 @@ class ComputeHost:
                 session["running"] = True
                 session["_turn_cancel_requested"] = False
                 session["last_active"] = time.time()
-                server._start_inflight_turn(session, frame.get("text") if "text" in frame else frame.get("prompt"))
+                server._start_inflight_turn(
+                    session,
+                    frame.get("text") if "text" in frame else frame.get("prompt"),
+                    display_kind=frame.get("display_kind"),
+                )
             self.emit({"type": "turn.started", "sid": sid, "request_id": request_id, "started_ns": now_ns()})
             try:
                 server._ensure_session_db_row(session)
@@ -483,7 +487,13 @@ class ComputeHost:
             except Exception:
                 pass
             text = frame.get("text") if "text" in frame else frame.get("prompt", "")
-            server._run_prompt_submit(request_id, sid, session, text)
+            server._run_prompt_submit(
+                request_id,
+                sid,
+                session,
+                text,
+                display_kind=frame.get("display_kind"),
+            )
             run_thread = session.get("_run_thread")
             if run_thread is not None and hasattr(run_thread, "join"):
                 run_thread.join()
@@ -725,7 +735,10 @@ class ComputeHost:
             if command:
                 output = server._mirror_slash_side_effects(sid, session, command)
             with session["history_lock"]:
-                messages = server._history_to_messages(list(session.get("history") or []))
+                messages = server._history_to_messages(
+                    list(session.get("history") or []),
+                    profile_source=bool(session.get("profile_source")),
+                )
                 history_version = int(session.get("history_version", 0))
                 message_count = len(session.get("history") or [])
                 session_key = str(session.get("session_key") or "")

@@ -57,6 +57,10 @@ _HERMES_CORE_TOOLS = [
     "text_to_speech",
     # Planning & memory
     "todo", "memory",
+    # This is granted only by the private ``source_profile`` toolset on the
+    # onboarding session. Keep its small save schema eager there: deferring it
+    # behind generic tool search lets the model miss the required final save.
+    "source_profile",
     # NOTE: the desktop Project tools (project_list/create/switch) are
     # deliberately NOT here. They only make sense where a GUI can follow the
     # move, so they live in the `project` toolset and are enabled solely by the

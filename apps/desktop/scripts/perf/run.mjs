@@ -9,7 +9,7 @@
 //   --spawn                launch a fully isolated instance (own user-data-dir +
 //                          HERMES_HOME + debug port) instead of attaching
 //   --port <n>             CDP port to attach to (default 9222)
-//   --dev-port <n>         vite dev-server port to match / spawn (default 5174)
+//   --dev-port <n>         vite dev-server port to match / spawn (default 5175)
 //   --runs <n>             repeat each scenario n times, report the median (default 1)
 //   --cpuprofile [dir]     also record a V8 CPU profile per scenario (top-30 self time)
 //   --update-baseline      overwrite baseline.json with this run's numbers
@@ -110,7 +110,7 @@ async function main() {
 
   const runs = Number(flags.runs ?? 1)
   const port = Number(flags.port ?? 9222)
-  const devPort = Number(flags['dev-port'] ?? 5174)
+  const devPort = Number(flags['dev-port'] ?? 5175)
   const prod = 'prod' in flags
   const cpuProfile = 'cpuprofile' in flags
   const cpuProfileDir = typeof flags.cpuprofile === 'string' ? flags.cpuprofile : HERE

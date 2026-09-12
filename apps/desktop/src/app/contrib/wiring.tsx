@@ -80,6 +80,8 @@ import { ModelPickerOverlay } from '../model-picker-overlay'
 import { ModelVisibilityOverlay } from '../model-visibility-overlay'
 import { mainChatOccupied, openSession } from '../open-session'
 import { PetGenerateOverlay } from '../pet-generate/pet-generate-overlay'
+import { claimProfileSourceAutoTrigger } from '../profile-interview/auto-trigger'
+import { launchProfileSourceConversation } from '../profile-interview/launcher'
 import { FileActionDialogs } from '../right-sidebar/file-actions'
 import { RemoteFolderPicker } from '../right-sidebar/files/remote-picker'
 import { resetProjectTreeState } from '../right-sidebar/files/use-project-tree'
@@ -1014,6 +1016,14 @@ export function ContribWiring({ children }: { children: ReactNode }) {
             void refreshHermesConfig()
             void refreshCurrentModel()
             void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+
+            if (!claimProfileSourceAutoTrigger()) {
+              return
+            }
+
+            void launchProfileSourceConversation({ request: requestGateway, navigate, cwd: currentCwd }).catch(error => {
+              console.error('[profile-interview] auto-trigger launch failed', error)
+            })
           }}
           profile={activeGatewayProfile}
           requestGateway={requestGateway}

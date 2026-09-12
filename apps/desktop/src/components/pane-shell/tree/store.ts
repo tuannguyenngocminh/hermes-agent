@@ -225,8 +225,12 @@ export function registerPaneCloser(paneId: string, close?: () => void) {
  * owns) while the toggle stays truthful. Only panes that opt in via
  * `data.revealOnPreset` are opened on preset apply.
  */
-export function registerPaneOpener(paneId: string, open: () => void) {
-  paneOpeners[paneId] = open
+export function registerPaneOpener(paneId: string, open?: () => void) {
+  if (open) {
+    paneOpeners[paneId] = open
+  } else {
+    delete paneOpeners[paneId]
+  }
 }
 
 // TOOL PANELS (terminal, logs, …): their toggle COLLAPSES the zone to a rail
@@ -1400,12 +1404,12 @@ export function $paneVisible(paneId: string): ReadableAtom<boolean> {
  */
 export function bindPaneVisibility(
   paneId: string,
-  $open: { get(): boolean; listen(fn: (open: boolean) => void): void },
+  $open: { get(): boolean; listen(fn: (open: boolean) => void): () => void },
   close?: () => void,
   open?: () => void
 ) {
   setTreePaneHidden(paneId, !$open.get())
-  $open.listen(isOpen => setTreePaneHidden(paneId, !isOpen))
+  const unlisten = $open.listen(isOpen => setTreePaneHidden(paneId, !isOpen))
 
   if (close) {
     registerPaneCloser(paneId, close)
@@ -1413,6 +1417,18 @@ export function bindPaneVisibility(
 
   if (open) {
     registerPaneOpener(paneId, open)
+  }
+
+  return () => {
+    unlisten()
+
+    if (close) {
+      registerPaneCloser(paneId)
+    }
+
+    if (open) {
+      registerPaneOpener(paneId)
+    }
   }
 }
 

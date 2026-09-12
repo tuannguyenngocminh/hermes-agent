@@ -13,6 +13,7 @@ import {
   HUD_SURFACE,
   HUD_TEXT
 } from '@/app/floating-hud'
+import { $advancedMode } from '@/app/advanced-mode'
 import { codiconIcon } from '@/components/ui/codicon'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { HighlightMatches } from '@/components/ui/highlight-matches'
@@ -96,7 +97,8 @@ import {
   PROFILES_ROUTE,
   SETTINGS_ROUTE,
   SKILLS_ROUTE,
-  STARMAP_ROUTE
+  STARMAP_ROUTE,
+  isSkillsNavigationVisible
 } from '../routes'
 import { FIELD_LABELS, SECTIONS } from '../settings/constants'
 import { fieldCopyForSchemaKey } from '../settings/field-copy'
@@ -530,6 +532,7 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
   const dismissedAutoProjects = useStore($dismissedAutoProjectIds)
   const navigate = useNavigate()
   const { availableThemes, mode, resolvedMode, setMode, setTheme, themeName } = useTheme()
+  const advancedMode = useStore($advancedMode)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState<string | null>(null)
 
@@ -776,14 +779,18 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
             label: cc.nav.settings.title,
             run: go(SETTINGS_ROUTE)
           },
-          {
-            action: 'nav.skills',
-            icon: Wrench,
-            id: 'nav-skills',
-            keywords: ['skills', 'tools', 'toolsets', 'mcp', 'capabilities'],
-            label: cc.nav.skills.title,
-            run: go(SKILLS_ROUTE)
-          },
+          ...(isSkillsNavigationVisible(advancedMode)
+            ? [
+                {
+                  action: 'nav.skills',
+                  icon: Wrench,
+                  id: 'nav-skills',
+                  keywords: ['skills', 'tools', 'toolsets', 'mcp', 'capabilities'],
+                  label: cc.nav.skills.title,
+                  run: go(SKILLS_ROUTE)
+                }
+              ]
+            : []),
           {
             action: 'nav.messaging',
             icon: MessageCircle,
@@ -949,6 +956,7 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
     selectTick,
     settingsSectionLabel,
     t,
+    advancedMode,
     updateVersionLabel
   ])
 
@@ -1002,9 +1010,10 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
     // jump to the exact tab (matches the "not just the top lvl" ask).
     const capLabel = t.commandCenter.nav.skills.title
 
-    result.push({
-      heading: capLabel,
-      items: [
+    if (isSkillsNavigationVisible(advancedMode)) {
+      result.push({
+        heading: capLabel,
+        items: [
         {
           icon: Wrench,
           id: 'cap-skills',
@@ -1026,8 +1035,9 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
           label: `${capLabel}: ${t.skills.tabMcp}`,
           run: go(`${SKILLS_ROUTE}?tab=mcp`)
         }
-      ]
-    })
+        ]
+      })
+    }
 
     // Apply a theme directly from the root search (e.g. "nous" → Nous). Live
     // preview via keepOpen, mirroring the nested theme picker. If the theme
@@ -1132,6 +1142,7 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
   }, [
     archivedSessions,
     availableThemes,
+    advancedMode,
     configFieldLabel,
     go,
     goSession,

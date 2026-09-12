@@ -49,13 +49,26 @@ export function contextValue(value: unknown): string {
 export const MAX_TOOL_RENDER_CHARS = 20_000
 
 export function clampForDisplay(value: string, max = MAX_TOOL_RENDER_CHARS): string {
+  const suffix = (omitted: number) => `\n\n… ${omitted.toLocaleString()} more characters truncated — use Copy for the full output.`
+
   if (value.length <= max) {
     return value
   }
 
-  const omitted = value.length - max
+  // Reserve room for the actionable notice so the rendered result remains
+  // bounded by `max` instead of returning max characters plus an unbounded
+  // suffix.
+  let visible = Math.max(0, max - suffix(value.length - max).length)
+  let omitted = value.length - visible
+  let marker = suffix(omitted)
 
-  return `${value.slice(0, max)}\n\n… ${omitted.toLocaleString()} more characters truncated — use Copy for the full output.`
+  // Grouping digits can change the suffix width; recompute with the actual
+  // omitted count before producing the final bounded string.
+  visible = Math.max(0, max - marker.length)
+  omitted = value.length - visible
+  marker = suffix(omitted)
+
+  return `${value.slice(0, visible)}${marker}`
 }
 
 export function prettyJson(value: unknown): string {

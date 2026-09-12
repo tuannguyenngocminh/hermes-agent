@@ -10,7 +10,7 @@ import { test } from 'vitest'
 
 import { DEFAULT_PORT, describeDevCdpDecision, resolveDevCdpPort } from './dev-cdp'
 
-const DEV_SERVER = 'http://127.0.0.1:5174'
+const DEV_SERVER = 'http://127.0.0.1:5175'
 
 /** The ordinary `npm run dev` / `hgui` run. */
 const devRun = { env: {}, isPackaged: false, devServer: DEV_SERVER }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 
 import { PlatformAvatar } from '@/app/messaging/platform-icon'
+import { $advancedMode } from '@/app/advanced-mode'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -101,6 +102,7 @@ import { $focusedStoredSessionId, $workingSessionIds, type SplitDir } from '@/st
 import {
   type AppView,
   ARTIFACTS_ROUTE,
+  isSkillsNavigationVisible,
   MESSAGING_ROUTE,
   SIDEBAR_NAV_AREA,
   type SidebarNavContribution,
@@ -305,6 +307,7 @@ export function ChatSidebar({
   const workingSessionIds = useStore($workingSessionIds)
   const profiles = useStore($profiles)
   const profileScope = useStore($profileScope)
+  const advancedMode = useStore($advancedMode)
   // Only surface the profile switcher when more than one profile exists, so
   // single-profile users see the unchanged sidebar.
   const multiProfile = profiles.length > 1
@@ -1127,7 +1130,10 @@ export function ChatSidebar({
         <SidebarGroup className="shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]">
           <SidebarGroupContent>
             <SidebarMenu className="gap-px">
-              {[...SIDEBAR_NAV, ...contributedNav].map(item => {
+              {[
+                ...SIDEBAR_NAV.filter(item => item.id !== 'skills' || isSkillsNavigationVisible(advancedMode)),
+                ...contributedNav
+              ].map(item => {
                 const isInteractive = Boolean(item.action) || Boolean(item.route)
 
                 const active =

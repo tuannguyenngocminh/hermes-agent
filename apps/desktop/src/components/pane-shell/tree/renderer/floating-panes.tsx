@@ -9,7 +9,7 @@
  */
 
 import { useStore } from '@nanostores/react'
-import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { HUD_SURFACE } from '@/app/floating-hud'
 import { TITLEBAR_HEIGHT } from '@/app/shell/titlebar'
@@ -20,7 +20,7 @@ import type { Contribution } from '@/contrib/types'
 import { readJson, writeJson } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 
-import { $hiddenTreePanes } from '../store'
+import { $hiddenTreePanes, setTreePaneHidden } from '../store'
 
 import {
   anchoredRect,
@@ -34,6 +34,7 @@ import {
 import { paneChrome } from './track-model'
 
 const POSITIONS_KEY = 'hermes.desktop.floatingPanes.v1'
+const DRAG_CLICK_THRESHOLD = 4
 
 const DEFAULT_SIZE = { width: 240, height: 180 }
 
@@ -55,10 +56,13 @@ function FloatingPane({ pane }: { pane: Contribution }) {
   const chrome = paneChrome(pane)
   const anchor = chrome.anchor ?? 'top-right'
 
-  const size = {
-    width: floatingPx(chrome.width, DEFAULT_SIZE.width),
-    height: floatingPx(chrome.height, DEFAULT_SIZE.height)
-  }
+  const size = useMemo(
+    () => ({
+      width: floatingPx(chrome.width, DEFAULT_SIZE.width),
+      height: floatingPx(chrome.height, DEFAULT_SIZE.height)
+    }),
+    [chrome.height, chrome.width]
+  )
 
   const [rect, setRect] = useState<FloatingRect>(() => {
     const stored = readStored()[pane.id]
@@ -69,7 +73,8 @@ function FloatingPane({ pane }: { pane: Contribution }) {
 
   const [collapsed, setCollapsed] = useState(() => readStored()[pane.id]?.collapsed ?? false)
 
-  const drag = useRef<{ x: number; y: number } | null>(null)
+  const drag = useRef<{ moved: boolean; startX: number; startY: number; x: number; y: number } | null>(null)
+  const suppressNextToggle = useRef(false)
   const viewport = useRef<FloatingViewport>(viewportNow())
 
   const persist = useCallback(
@@ -101,7 +106,13 @@ function FloatingPane({ pane }: { pane: Contribution }) {
     }
 
     event.currentTarget.setPointerCapture(event.pointerId)
-    drag.current = { x: event.clientX, y: event.clientY }
+    drag.current = {
+      moved: false,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY
+    }
     event.preventDefault()
   }, [])
 
@@ -112,7 +123,11 @@ function FloatingPane({ pane }: { pane: Contribution }) {
       return
     }
 
-    drag.current = { x: event.clientX, y: event.clientY }
+    const moved =
+      from.moved ||
+      Math.hypot(event.clientX - from.startX, event.clientY - from.startY) > DRAG_CLICK_THRESHOLD
+
+    drag.current = { ...from, moved, x: event.clientX, y: event.clientY }
 
     setRect(current =>
       clampFloatingRect(
@@ -124,11 +139,14 @@ function FloatingPane({ pane }: { pane: Contribution }) {
 
   const onPointerUp = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
-      if (!drag.current) {
+      const session = drag.current
+
+      if (!session) {
         return
       }
 
       drag.current = null
+      suppressNextToggle.current = session.moved
       event.currentTarget.releasePointerCapture?.(event.pointerId)
       setRect(current => {
         persist(current, collapsed)
@@ -139,47 +157,87 @@ function FloatingPane({ pane }: { pane: Contribution }) {
     [collapsed, persist]
   )
 
-  const toggleCollapsed = () =>
+  const toggleCollapsed = useCallback(() => {
+    if (suppressNextToggle.current) {
+      suppressNextToggle.current = false
+
+      return
+    }
+
     setCollapsed(current => {
-      persist(rect, !current)
+      const nextRect = current ? anchoredRect(anchor, size, viewport.current) : rect
+
+      if (current) {
+        setRect(nextRect)
+      }
+
+      persist(nextRect, !current)
 
       return !current
     })
+  }, [anchor, persist, rect, size])
+
+  const customHeader = chrome.customHeader === true
+
+  const floatingContext = customHeader
+    ? {
+        floating: {
+          collapsed,
+          dragHandleProps: {
+            onPointerDown,
+            onPointerMove,
+            onPointerUp,
+            style: { touchAction: 'none' }
+          },
+          onClose: () => setTreePaneHidden(pane.id, true),
+          onToggleCollapse: toggleCollapsed
+        }
+      }
+    : undefined
 
   return (
     <div
-      className={cn('pointer-events-auto fixed z-45 flex flex-col overflow-hidden', HUD_SURFACE)}
+      className={cn(
+        'pointer-events-auto fixed z-45',
+        customHeader ? 'h-auto' : cn('flex flex-col overflow-hidden', HUD_SURFACE)
+      )}
       data-floating-pane={pane.id}
       style={{
         left: rect.x,
         top: rect.y,
-        width: size.width,
+        width: collapsed && customHeader ? undefined : size.width,
         height: collapsed ? undefined : size.height
       }}
     >
-      {/* Header IS the drag handle — the floating equivalent of a tab strip. */}
-      <header
-        className="flex shrink-0 cursor-grab items-center justify-between gap-2 px-2.5 py-1.5 text-[0.6875rem] text-(--ui-text-secondary) select-none"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        style={{ touchAction: 'none' }}
-      >
-        <span className="truncate font-medium">{pane.title ?? pane.id}</span>
-        <button
-          className="rounded p-0.5 text-(--ui-text-quaternary) transition-colors hover:text-(--ui-text-primary)"
-          data-floating-no-drag=""
-          onClick={toggleCollapsed}
-          type="button"
-        >
-          <Codicon name={collapsed ? 'chevron-down' : 'chevron-up'} size="0.75rem" />
-        </button>
-      </header>
+      {customHeader ? (
+        <ContribBoundary id={pane.id}>{pane.render?.(floatingContext)}</ContribBoundary>
+      ) : (
+        <>
+          {/* Header IS the drag handle — the floating equivalent of a tab strip. */}
+          <header
+            className="flex shrink-0 cursor-grab items-center justify-between gap-2 px-2.5 py-1.5 text-[0.6875rem] text-(--ui-text-secondary) select-none"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            style={{ touchAction: 'none' }}
+          >
+            <span className="truncate font-medium">{pane.title ?? pane.id}</span>
+            <button
+              className="rounded p-0.5 text-(--ui-text-quaternary) transition-colors hover:text-(--ui-text-primary)"
+              data-floating-no-drag=""
+              onClick={toggleCollapsed}
+              type="button"
+            >
+              <Codicon name={collapsed ? 'chevron-down' : 'chevron-up'} size="0.75rem" />
+            </button>
+          </header>
 
-      {!collapsed && (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <ContribBoundary id={pane.id}>{pane.render?.()}</ContribBoundary>
-        </div>
+          {!collapsed && (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <ContribBoundary id={pane.id}>{pane.render?.()}</ContribBoundary>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

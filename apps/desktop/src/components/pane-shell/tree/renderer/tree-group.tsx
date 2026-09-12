@@ -574,7 +574,11 @@ export function TreeGroup({
                     <PaneGroupContext.Provider value={node.id}>
                       <PaneVisibleContext.Provider value={isActive}>
                         <ContribBoundary id={pane.id} key={paneEpochs[paneId] ?? 0}>
-                          {pane.render()}
+                          {pane.render(
+                            paneChrome(pane).customHeader && paneChrome(pane).placement === 'right'
+                              ? { docked: { onClose: () => closeTab(paneId) } }
+                              : undefined
+                          )}
                         </ContribBoundary>
                       </PaneVisibleContext.Provider>
                     </PaneGroupContext.Provider>

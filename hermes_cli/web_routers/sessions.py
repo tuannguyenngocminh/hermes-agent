@@ -619,6 +619,12 @@ async def get_session_messages(
     if result is None:
         raise HTTPException(status_code=404, detail="Session not found")
     sid, _limit, messages = result
+    # `hidden` rows are model-facing scaffolding. Keeping them in the durable
+    # store preserves replay, but this endpoint feeds the Desktop transcript
+    # and session export; returning them lets an internal skill invocation be
+    # rendered as a user message before the renderer's own defensive filter
+    # gets a chance to run.
+    messages = [message for message in messages if message.get("display_kind") != "hidden"]
     return {
         "session_id": sid,
         "messages": messages,

@@ -1637,6 +1637,35 @@ class TestWebServerEndpoints:
         resp = self.client.get("/api/sessions/neg-offset-messages/messages?offset=-1")
         assert resp.status_code == 422
 
+    def test_get_session_messages_does_not_expose_hidden_model_scaffolding(self):
+        """The REST transcript is used to paint Desktop and export a chat.
+
+        A hidden row is model-only context, so returning it lets a client render
+        the profile-source activation banner as if the user typed it. Ordinary
+        visible rows in the same conversation must still be returned.
+        """
+        from hermes_state import SessionDB
+
+        db = SessionDB()
+        try:
+            db.create_session(session_id="hidden-transcript", source="desktop")
+            db.append_message(
+                session_id="hidden-transcript",
+                role="user",
+                content='[IMPORTANT: The user has invoked the "profile-source-v4" skill.]',
+                display_kind="hidden",
+            )
+            db.append_message(
+                session_id="hidden-transcript", role="assistant", content="Chào bạn"
+            )
+        finally:
+            db.close()
+
+        resp = self.client.get("/api/sessions/hidden-transcript/messages")
+
+        assert resp.status_code == 200
+        assert [message["content"] for message in resp.json()["messages"]] == ["Chào bạn"]
+
     def test_get_session_messages_limit_above_500_is_capped_not_rejected(self):
         """A limit above the documented 500-row cap is silently clamped
         (existing ``min(limit, 500)`` behaviour), not rejected — the request

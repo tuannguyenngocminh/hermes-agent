@@ -149,6 +149,17 @@ def _tui_embedded_pane_clarifier(hint: str) -> str:
     return hint + _TUI_EMBEDDED_PANE_CLARIFIER
 
 
+def load_super_agent_instruction() -> Optional[str]:
+    """Load the bundled Super Agent behavior guidance, if installed."""
+    instruction_path = get_hermes_home() / "resources" / "super-agent-instruction.md"
+    try:
+        instruction = instruction_path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        logger.debug("super-agent instruction unavailable at %s", instruction_path, exc_info=True)
+        return None
+    return instruction or None
+
+
 def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) -> Dict[str, str]:
     """Assemble the system prompt as three ordered cache tiers.
 
@@ -199,6 +210,14 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     if not _soul_loaded:
         # Fallback to hardcoded identity
         stable_parts.append(DEFAULT_AGENT_IDENTITY)
+
+    try:
+        _super_agent_instruction = load_super_agent_instruction()
+    except Exception:
+        logger.debug("super-agent instruction failed during prompt assembly", exc_info=True)
+        _super_agent_instruction = None
+    if _super_agent_instruction:
+        stable_parts.append(_super_agent_instruction)
 
     # Pointer to the hermes-agent skill + docs for user questions about Hermes itself.
     stable_parts.append(HERMES_AGENT_HELP_GUIDANCE)
@@ -664,6 +683,7 @@ def format_tools_for_system_message(agent: Any) -> str:
 
 
 __all__ = [
+    "load_super_agent_instruction",
     "build_system_prompt_parts",
     "build_system_prompt",
     "invalidate_system_prompt",

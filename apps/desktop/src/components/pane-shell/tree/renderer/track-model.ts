@@ -45,6 +45,8 @@ export interface PaneSizing {
 
 /** Chrome behavior flags a pane contributes. Read via `paneChrome`. */
 interface PaneChrome extends PaneSizing {
+  /** Let a floating contribution own its surface and header chrome. */
+  customHeader?: boolean
   /** Leaves the grid on narrow viewports; revealed as an edge overlay. */
   collapsible?: boolean
   /** Extra ids accepted from PANE_TOGGLE_REVEAL_EVENT (the real app's pane

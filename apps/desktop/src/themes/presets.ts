@@ -33,8 +33,8 @@ const nousTintTransparent = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${
  */
 export const nousTheme: DesktopTheme = {
   name: 'nous',
-  label: 'Nous',
-  description: 'Glass neutrals with Nous blue accents',
+  label: 'Cobalt',
+  description: 'Glass neutrals with cobalt blue accents',
   colors: {
     background: '#F8FAFF',
     foreground: '#17171A',
@@ -93,6 +93,61 @@ export const nousTheme: DesktopTheme = {
     fontSans: SYSTEM_SANS,
     fontMono: SYSTEM_MONO,
     fontUrl: 'https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap'
+  }
+}
+
+/** Super Agent — warm stone surfaces with orange accent tokens from the design system. */
+export const superAgentTheme: DesktopTheme = {
+  name: 'super-agent',
+  label: 'Super Agent',
+  description: 'Warm stone surfaces with Super Agent orange accents',
+  colors: {
+    background: '#FAF8F5',
+    foreground: '#120E0D',
+    card: '#FDFDFB',
+    cardForeground: '#120E0D',
+    muted: '#F5F1ED',
+    mutedForeground: '#817874',
+    popover: '#FDFDFB',
+    popoverForeground: '#120E0D',
+    primary: '#E65719',
+    primaryForeground: '#FEFBF8',
+    secondary: '#F5F1ED',
+    secondaryForeground: '#120E0D',
+    accent: '#FFF2ED',
+    accentForeground: '#120E0D',
+    border: '#E9E3DE',
+    input: '#E9E3DE',
+    ring: '#F67D51',
+    destructive: '#DB2B33',
+    destructiveForeground: '#FEFBF8'
+  },
+  darkColors: {
+    background: '#060404',
+    foreground: '#FAF8F5',
+    card: '#120E0D',
+    cardForeground: '#FAF8F5',
+    muted: '#060404',
+    mutedForeground: '#ABA39D',
+    popover: '#26201E',
+    popoverForeground: '#FAF8F5',
+    primary: '#F67D51',
+    primaryForeground: '#FEFBF8',
+    secondary: '#060404',
+    secondaryForeground: '#FAF8F5',
+    accent: '#472215',
+    accentForeground: '#FAF8F5',
+    border: '#403936',
+    input: '#403936',
+    ring: '#F67D51',
+    destructive: '#DB2B33',
+    destructiveForeground: '#FEFBF8'
+  },
+  typography: {
+    fontSans: `"Plus Jakarta Sans", ${SYSTEM_SANS}`,
+    fontMono: `"JetBrains Mono", ${SYSTEM_MONO}`,
+    fontUrl:
+      'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap'
   }
 }
 
@@ -277,6 +332,7 @@ export const slateTheme: DesktopTheme = {
 }
 
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
+  'super-agent': superAgentTheme,
   nous: nousTheme,
   midnight: midnightTheme,
   ember: emberTheme,
@@ -288,4 +344,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
 
 /** Skin used when nothing is persisted or the persisted name is retired. */
-export const DEFAULT_SKIN_NAME = 'nous'
+export const DEFAULT_SKIN_NAME = 'super-agent'

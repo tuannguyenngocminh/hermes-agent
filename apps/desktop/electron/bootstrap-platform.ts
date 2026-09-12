@@ -107,4 +107,8 @@ function detectRemoteDisplay(options: { env?: NodeJS.ProcessEnv; platform?: Node
   return null
 }
 
-export { bundledRuntimeImportCheck, detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment }
+function gpuCommandLineSwitches(reason: string | null): string[] {
+  return reason ? ['disable-gpu', 'disable-gpu-compositing'] : []
+}
+
+export { bundledRuntimeImportCheck, detectRemoteDisplay, gpuCommandLineSwitches, isWindowsBinaryPathInWsl, isWslEnvironment }

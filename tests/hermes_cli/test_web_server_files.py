@@ -128,6 +128,47 @@ def test_query_token_does_not_authenticate_other_endpoints(forced_files_client):
     assert leaked.status_code == 401
 
 
+def test_workspace_mkdir_is_idempotent_and_preserves_file_collision(local_files_client):
+    client, root = local_files_client
+    workspace = root / "workspace"
+    workspace.mkdir()
+
+    created = client.post("/api/workspace/mkdir", json={"root": str(workspace), "path": "Tài liệu/Đầu vào"})
+    skipped = client.post("/api/workspace/mkdir", json={"root": str(workspace), "path": "Tài liệu/Đầu vào"})
+    assert created.status_code == 200 and created.json()["status"] == "created"
+    assert skipped.status_code == 200 and skipped.json()["status"] == "skipped"
+
+    sentinel = workspace / "Marketing"
+    sentinel.write_text("user-owned sentinel")
+    conflict = client.post("/api/workspace/mkdir", json={"root": str(workspace), "path": "Marketing"})
+    assert conflict.status_code == 409
+    assert sentinel.read_text() == "user-owned sentinel"
+
+
+def test_workspace_safe_write_never_overwrites_or_escapes(local_files_client):
+    client, root = local_files_client
+    workspace = root / "workspace"
+    (workspace / "Tài liệu").mkdir(parents=True)
+
+    created = client.post(
+        "/api/workspace/write-text-safe",
+        json={"root": str(workspace), "path": "Tài liệu/AGENTS.md", "content": "new content"},
+    )
+    conflict = client.post(
+        "/api/workspace/write-text-safe",
+        json={"root": str(workspace), "path": "Tài liệu/AGENTS.md", "content": "replacement"},
+    )
+    escaped = client.post(
+        "/api/workspace/write-text-safe",
+        json={"root": str(workspace), "path": "../outside.txt", "content": "must not write"},
+    )
+    assert created.status_code == 200
+    assert conflict.status_code == 409
+    assert escaped.status_code == 400
+    assert (workspace / "Tài liệu" / "AGENTS.md").read_text() == "new content"
+    assert not (root / "outside.txt").exists()
+
+
 
 
 # ---------------------------------------------------------------------------

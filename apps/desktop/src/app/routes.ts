@@ -7,7 +7,10 @@ import { registry } from '@/contrib/registry'
 type NavigateLike = (to: string, options?: { replace?: boolean }) => void
 
 export const SESSION_ROUTE_PREFIX = '/'
-export const NEW_CHAT_ROUTE = '/'
+export const DASHBOARD_ROUTE = '/'
+export const COMPOSER_ROUTE = '/compose'
+/** Backward-compatible name for the route that opens a fresh composer. */
+export const NEW_CHAT_ROUTE = COMPOSER_ROUTE
 export const SETTINGS_ROUTE = '/settings'
 export const COMMAND_CENTER_ROUTE = '/command-center'
 export const SKILLS_ROUTE = '/skills'
@@ -19,12 +22,18 @@ export const PROFILES_ROUTE = '/profiles'
 export const AGENTS_ROUTE = '/agents'
 export const STARMAP_ROUTE = '/starmap'
 
+/** Whether the core `/skills` entry may be exposed by navigation affordances. */
+export function isSkillsNavigationVisible(advancedMode: boolean): boolean {
+  return advancedMode
+}
+
 export type AppView =
   | 'agents'
   | 'artifacts'
   | 'chat'
   | 'command-center'
   | 'cron'
+  | 'dashboard'
   // A contributed (plugin) full page at its own route — NOT chat. Without this
   // distinction contributed paths fell through appViewForPath's 'chat' default,
   // so the sidebar kept a session highlighted and the titlebar kept the
@@ -42,6 +51,7 @@ export type AppRouteId =
   | 'artifacts'
   | 'command-center'
   | 'cron'
+  | 'dashboard'
   | 'messaging'
   | 'new'
   | 'profiles'
@@ -57,6 +67,7 @@ export interface AppRoute {
 }
 
 export const APP_ROUTES = [
+  { id: 'dashboard', path: DASHBOARD_ROUTE, view: 'dashboard' },
   { id: 'new', path: NEW_CHAT_ROUTE, view: 'chat' },
   { id: 'settings', path: SETTINGS_ROUTE, view: 'settings' },
   { id: 'command-center', path: COMMAND_CENTER_ROUTE, view: 'command-center' },
@@ -80,6 +91,9 @@ const RESERVED_PATHS: ReadonlySet<string> = new Set(APP_ROUTES.map(route => rout
 // mistakes them for a session route. Navigate with `host.navigate(path)`.
 
 export const ROUTES_AREA = 'routes'
+
+/** Full-page work dashboard mounted at the root route. */
+export const DASHBOARD_AREA = 'dashboard'
 
 /** Payload of a `routes` contribution's `data`. */
 export interface RouteContribution {
@@ -188,7 +202,7 @@ export function sessionRoute(sessionId: string): string {
 export function appViewForPath(pathname: string): AppView {
   const path = routePathname(pathname)
 
-  if (isNewChatRoute(path) || routeSessionId(path)) {
+  if (routeSessionId(path)) {
     return 'chat'
   }
 

@@ -2919,6 +2919,13 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 ),
                 next_args,
             )
+    elif function_name == "dashboard_summary":
+        def _execute(next_args: dict) -> Any:
+            from tools.dashboard_summary_tool import dashboard_summary as _dashboard_summary
+            return _finish_agent_tool(
+                _dashboard_summary(profile=next_args.get("profile")),
+                next_args,
+            )
     elif function_name == "memory":
         def _execute(next_args: dict) -> Any:
             target = next_args.get("target", "memory")

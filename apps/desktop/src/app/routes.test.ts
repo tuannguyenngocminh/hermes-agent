@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
-import { NEW_CHAT_ROUTE, primaryRouteSelectedSessionId, sessionRoute, SETTINGS_ROUTE } from './routes'
+import {
+  appViewForPath,
+  COMPOSER_ROUTE,
+  DASHBOARD_ROUTE,
+  isSkillsNavigationVisible,
+  NEW_CHAT_ROUTE,
+  primaryRouteSelectedSessionId,
+  sessionRoute,
+  SETTINGS_ROUTE,
+  SKILLS_ROUTE
+} from './routes'
 
 const SESS_A = 'sess-a'
 const SESS_B = 'sess-b'
@@ -26,5 +36,31 @@ describe('primaryRouteSelectedSessionId', () => {
 
   it('returns null on a non-chat route with no store selection', () => {
     expect(primaryRouteSelectedSessionId(SETTINGS_ROUTE, null)).toBeNull()
+  })
+})
+
+describe('default route view mapping', () => {
+  it('resolves the root route to the work dashboard view', () => {
+    expect(appViewForPath(DASHBOARD_ROUTE)).toBe('dashboard')
+  })
+
+  it('resolves the composer route to chat', () => {
+    expect(appViewForPath(COMPOSER_ROUTE)).toBe('chat')
+  })
+
+  it('keeps a session route on the chat view', () => {
+    expect(appViewForPath('/session-test')).toBe('chat')
+  })
+})
+
+describe('skills navigation visibility by mode', () => {
+  it('hides the core skills entry in simple mode while preserving the route', () => {
+    expect(isSkillsNavigationVisible(false)).toBe(false)
+    expect(appViewForPath(SKILLS_ROUTE)).toBe('skills')
+  })
+
+  it('shows the core skills entry in advanced mode and keeps deep links on skills', () => {
+    expect(isSkillsNavigationVisible(true)).toBe(true)
+    expect(appViewForPath(`${SKILLS_ROUTE}?tab=mcp`)).toBe('skills')
   })
 })

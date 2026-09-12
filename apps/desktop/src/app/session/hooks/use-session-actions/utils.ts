@@ -622,7 +622,12 @@ export function appendLiveSessionProjection(
   messages: ChatMessage[],
   projection: Pick<SessionResumeResponse, 'inflight' | 'queued' | 'session_id'>
 ): ChatMessage[] {
-  const inflightUser = projection.inflight?.user?.trim() ?? ''
+  // The profile-source scaffold is persisted as a hidden user row. During the
+  // turn, session.resume also exposes it through the text-only inflight
+  // projection; preserve that metadata so the temporary projection cannot
+  // reintroduce the hidden scaffold as a visible user bubble.
+  const inflightUser =
+    projection.inflight?.display_kind === 'hidden' ? '' : projection.inflight?.user?.trim() ?? ''
   const inflightAssistant = projection.inflight?.assistant ?? ''
   const inflightStreaming = Boolean(projection.inflight?.streaming)
 

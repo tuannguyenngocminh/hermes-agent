@@ -447,6 +447,9 @@ export interface Translations {
       minAgo: (count: number) => string
       hoursAgo: (count: number) => string
       daysAgo: (count: number) => string
+      openSource: string
+      builtOn: string
+      fullLicense: string
     }
     config: {
       none: string

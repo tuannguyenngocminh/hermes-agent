@@ -9,6 +9,7 @@ import { Loader } from '@/components/ui/loader'
 import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { ExternalLink, Loader2 } from '@/lib/icons'
+import { isOpenAICodexQuotaErrorMessage } from '@/lib/provider-setup-errors'
 import { cn } from '@/lib/utils'
 import {
   cancelOnboardingFlow,
@@ -29,12 +30,14 @@ export function FlowPanel({
   ctx,
   flow,
   leaving,
-  onBegin
+  onBegin,
+  onOpenOpenRouter
 }: {
   ctx: OnboardingContext
   flow: OnboardingFlow
   leaving: boolean
   onBegin: () => void
+  onOpenOpenRouter?: () => void
 }) {
   const { t } = useI18n()
   const title = 'provider' in flow && flow.provider ? providerTitle(flow.provider) : ''
@@ -56,13 +59,27 @@ export function FlowPanel({
   }
 
   if (flow.status === 'error') {
+    const isCodexQuota = isOpenAICodexQuotaErrorMessage(flow.message, flow.provider?.id)
+
     return (
       <div className="grid gap-3">
-        <div className="flex items-center gap-1.5 text-sm text-destructive">
-          <ErrorIcon className="shrink-0" size="0.875rem" />
-          <span>{flow.message || t.onboarding.signInFailed}</span>
+        <div className="grid gap-1 text-sm text-destructive">
+          {isCodexQuota ? <strong>Hết hạn mức ChatGPT</strong> : null}
+          <div className="flex items-center gap-1.5">
+            <ErrorIcon className="shrink-0" size="0.875rem" />
+            <span>
+              {isCodexQuota
+                ? 'Tài khoản ChatGPT đã dùng hết hạn mức hôm nay. Dùng OpenRouter để tiếp tục (cần API key riêng).'
+                : flow.message || t.onboarding.signInFailed}
+            </span>
+          </div>
         </div>
         <div className="flex justify-end">
+          {isCodexQuota && onOpenOpenRouter ? (
+            <Button onClick={onOpenOpenRouter} variant="default">
+              Dùng OpenRouter
+            </Button>
+          ) : null}
           <Button onClick={cancelOnboardingFlow} variant="outline">
             {t.onboarding.pickDifferentProvider}
           </Button>
@@ -119,14 +136,35 @@ export function FlowPanel({
     return null
   }
 
+  const isOpenAICodexDeviceFlow = flow.provider.id === 'openai-codex'
+
   return (
-    <Step title={t.onboarding.signInWith(title)}>
-      <p className="text-sm text-muted-foreground">{t.onboarding.deviceCodeOpened(title)}</p>
-      <DeviceCode code={flow.start.user_code} copied={flow.copied} onCopy={() => void copyDeviceCode()} />
-      <FlowFooter left={<DocsLink href={flow.start.verification_url}>{t.onboarding.reopenVerification}</DocsLink>}>
+    <Step
+      title={
+        isOpenAICodexDeviceFlow ? 'Đăng nhập bằng OpenAI OAuth (ChatGPT)' : t.onboarding.signInWith(title)
+      }
+    >
+      <p className="text-sm text-muted-foreground">
+        {isOpenAICodexDeviceFlow
+          ? 'Ứng dụng đã mở trình duyệt. Hãy đăng nhập ChatGPT trên trình duyệt, nhập mã bên dưới hoặc nhập lại mã nếu được yêu cầu, rồi quay lại ứng dụng và chờ hoàn tất.'
+          : t.onboarding.deviceCodeOpened(title)}
+      </p>
+      <DeviceCode
+        ariaLabel={isOpenAICodexDeviceFlow ? 'Sao chép mã xác thực' : undefined}
+        code={flow.start.user_code}
+        copied={flow.copied}
+        onCopy={() => void copyDeviceCode()}
+      />
+      <FlowFooter
+        left={
+          <DocsLink href={flow.start.verification_url}>
+            {isOpenAICodexDeviceFlow ? 'Mở lại trang xác thực' : t.onboarding.reopenVerification}
+          </DocsLink>
+        }
+      >
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
-          {t.onboarding.waitingAuthorize}
+          {isOpenAICodexDeviceFlow ? 'Đang chờ hoàn tất xác thực...' : t.onboarding.waitingAuthorize}
         </span>
         <CancelBtn size="sm" />
       </FlowFooter>
@@ -146,12 +184,22 @@ function Step({ children, title }: { children: React.ReactNode; title: string })
 // Device-code display: OTP-style — each character in its own readonly cell.
 // The whole row is the copy button (no side button, no checkmark); on copy the
 // cells flash emerald for feedback. Dashes render as quiet separators.
-function DeviceCode({ code, copied, onCopy }: { code: string; copied: boolean; onCopy: () => void }) {
+function DeviceCode({
+  ariaLabel,
+  code,
+  copied,
+  onCopy
+}: {
+  ariaLabel?: string
+  code: string
+  copied: boolean
+  onCopy: () => void
+}) {
   const { t } = useI18n()
 
   return (
     <button
-      aria-label={t.onboarding.copy}
+      aria-label={ariaLabel ?? t.onboarding.copy}
       className="group flex w-full items-center justify-center gap-1.5"
       onClick={onCopy}
       type="button"

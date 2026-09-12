@@ -165,6 +165,7 @@ declare global {
       revealLogs: () => Promise<{ ok: boolean; path: string; error?: string }>
       getRecentLogs: () => Promise<{ path: string; lines: string[] }>
       readDir: (path: string) => Promise<HermesReadDirResult>
+      mkdir?: (path: string, baseDir: string) => Promise<{ ok: boolean; status: 'created' | 'skipped' }>
       gitRoot?: (path: string) => Promise<string | null>
       // Reveal a path in the OS file manager (Finder / Explorer).
       revealPath?: (path: string) => Promise<boolean>
@@ -178,6 +179,11 @@ declare global {
       renamePath?: (path: string, newName: string) => Promise<{ path: string }>
       // Write a small UTF-8 text file (hardened path, parent must exist).
       writeTextFile?: (path: string, content: string) => Promise<{ path: string }>
+      writeTextFileSafe?: (
+        path: string,
+        content: string,
+        baseDir: string
+      ) => Promise<{ ok: boolean; status: 'created' | 'conflict' }>
       // Move a file/folder to the OS trash (recoverable).
       trashPath?: (path: string) => Promise<boolean>
       // Git-driven worktree management for the "Start work" flow.

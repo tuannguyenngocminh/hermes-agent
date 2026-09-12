@@ -79,6 +79,41 @@ export async function readDesktopFileText(path: string): Promise<HermesReadFileT
   return remoteFsApi<HermesReadFileTextResult>(fsPath('read-text', path))
 }
 
+export type DesktopFsSafeWriteResult = { ok: boolean; status: 'created' | 'conflict' }
+export type DesktopFsMkdirResult = { ok: boolean; status: 'created' | 'skipped' }
+
+export async function mkdirDesktopPath(relativePath: string, root: string): Promise<DesktopFsMkdirResult> {
+  const desktop = bridge()
+
+  if (!isDesktopFsRemoteMode()) {
+    if (!desktop.mkdir) {
+      throw new Error('Creating workspace directories is not available')
+    }
+
+    return desktop.mkdir(relativePath, root)
+  }
+
+  return remoteFsApi<DesktopFsMkdirResult>('/api/workspace/mkdir', { path: relativePath, root })
+}
+
+export async function writeDesktopFileTextSafe(
+  relativePath: string,
+  content: string,
+  root: string
+): Promise<DesktopFsSafeWriteResult> {
+  const desktop = bridge()
+
+  if (!isDesktopFsRemoteMode()) {
+    if (!desktop.writeTextFileSafe) {
+      throw new Error('Safe workspace writing is not available')
+    }
+
+    return desktop.writeTextFileSafe(relativePath, content, root)
+  }
+
+  return remoteFsApi<DesktopFsSafeWriteResult>('/api/workspace/write-text-safe', { content, path: relativePath, root })
+}
+
 // Save UTF-8 text back to a file. Local writes go through the hardened Electron
 // IPC; remote writes hit the dashboard's POST /api/fs/write-text (same path
 // hardening, parent-must-exist, size cap) so the editor behaves identically in

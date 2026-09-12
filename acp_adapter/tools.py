@@ -61,7 +61,7 @@ TOOL_KIND_MAP: Dict[str, ToolKind] = {
 
 _POLISHED_TOOLS = {
     # Core operator loop
-    "todo", "memory", "session_search", "delegate_task",
+    "todo", "memory", "session_search", "dashboard_summary", "delegate_task",
     # Files / execution
     "read_file", "write_file", "patch", "search_files", "terminal", "process", "execute_code",
     # Skills / web / browser / media

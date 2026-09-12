@@ -468,9 +468,9 @@ function spawnPowerShell(scriptPath, args, { emit, stageName, abortSignal, herme
         stdio: ['ignore', 'pipe', 'pipe'],
         env: {
           ...process.env,
-          // Pass HERMES_HOME through so install.ps1 respects the caller's
+          // Pass the resolved home through so install.ps1 respects the caller's
           // choice rather than re-computing the default.
-          HERMES_HOME: hermesHome || process.env.HERMES_HOME || ''
+          HERMES_HOME: hermesHome || process.env.SUPER_AGENT_HOME || ''
         }
       })
     )
@@ -566,7 +566,7 @@ function spawnBash(scriptPath, args, { emit, stageName, abortSignal, hermesHome 
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        HERMES_HOME: hermesHome || process.env.HERMES_HOME || ''
+        HERMES_HOME: hermesHome || process.env.SUPER_AGENT_HOME || ''
       }
     })
 
@@ -660,16 +660,17 @@ function spawnBash(scriptPath, args, { emit, stageName, abortSignal, hermesHome 
 // Build the installer branch/pin args from the install stamp. The commit pin
 // is fresh-install only: once a managed checkout already exists, bootstrap is
 // a repair/update path and must not let an old packaged app detach the checkout
-// back to the commit baked into that app. All-zero fallback stamps are never
+// back to the commit baked into that app. For a fresh real commit pin, omit the
+// stamped branch: the installer must be able to clone its public default branch
+// before fetching/checking out the exact commit. This keeps a local build branch
+// from becoming a production prerequisite. All-zero fallback stamps are never
 // passed as -Commit/--commit — only the branch is used (#50823 / #50864 review).
 function buildPinArgs(installStamp, { pinCommit = true } = {}) {
   const args = []
 
   if (pinCommit && installStamp && isPinnedCommit(installStamp.commit)) {
     args.push('-Commit', installStamp.commit)
-  }
-
-  if (installStamp && installStamp.branch) {
+  } else if (installStamp && installStamp.branch) {
     args.push('-Branch', installStamp.branch)
   }
 
@@ -679,12 +680,10 @@ function buildPinArgs(installStamp, { pinCommit = true } = {}) {
 function buildPosixPinArgs({ installStamp, activeRoot, hermesHome, pinCommit = true }) {
   const args = ['--dir', activeRoot, '--hermes-home', hermesHome]
 
-  if (installStamp && installStamp.branch) {
-    args.push('--branch', installStamp.branch)
-  }
-
   if (pinCommit && installStamp && isPinnedCommit(installStamp.commit)) {
     args.push('--commit', installStamp.commit)
+  } else if (installStamp && installStamp.branch) {
+    args.push('--branch', installStamp.branch)
   }
 
   return args

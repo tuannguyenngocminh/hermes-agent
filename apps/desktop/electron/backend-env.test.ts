@@ -8,7 +8,7 @@ import {
   buildDesktopBackendEnv,
   buildDesktopBackendPath,
   hermesManagedNodePathEntries,
-  normalizeHermesHomeRoot,
+  normalizeSuperAgentHomeRoot,
   pathEnvKey,
   POSIX_SANE_PATH_ENTRIES
 } from './backend-env'
@@ -147,16 +147,16 @@ test('buildDesktopBackendEnv forces PYTHONUTF8 unless the user set it explicitly
   assert.equal(optedOut.PYTHONUTF8, '0')
 })
 
-test('normalizeHermesHomeRoot maps profile homes back to the global Hermes root', () => {
+test('normalizeSuperAgentHomeRoot maps profile homes back to the global Super Agent root', () => {
   assert.equal(
-    normalizeHermesHomeRoot('/Users/test/.hermes/profiles/oracle', { pathModule: path.posix }),
-    '/Users/test/.hermes'
+    normalizeSuperAgentHomeRoot('/Users/test/.super-agent/profiles/oracle', { pathModule: path.posix }),
+    '/Users/test/.super-agent'
   )
   assert.equal(
-    normalizeHermesHomeRoot('C:\\Users\\test\\AppData\\Local\\hermes\\profiles\\oracle', { pathModule: path.win32 }),
-    'C:\\Users\\test\\AppData\\Local\\hermes'
+    normalizeSuperAgentHomeRoot('C:\\Users\\test\\AppData\\Local\\super-agent\\profiles\\oracle', { pathModule: path.win32 }),
+    'C:\\Users\\test\\AppData\\Local\\super-agent'
   )
-  assert.equal(normalizeHermesHomeRoot('/Users/test/.hermes', { pathModule: path.posix }), '/Users/test/.hermes')
+  assert.equal(normalizeSuperAgentHomeRoot('/Users/test/.super-agent', { pathModule: path.posix }), '/Users/test/.super-agent')
 })
 
 test('Windows PATH casing and delimiter are preserved without POSIX sane entries', () => {

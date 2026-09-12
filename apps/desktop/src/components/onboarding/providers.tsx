@@ -23,15 +23,43 @@ const orderOf = (p: OAuthProvider) => PROVIDER_DISPLAY[p.id]?.order ?? 99
 export const sortProviders = (providers: OAuthProvider[]) =>
   [...providers].sort((a, b) => orderOf(a) - orderOf(b) || a.name.localeCompare(b.name))
 
+export function FreeTrialProviderRow() {
+  return (
+    <div className="flex w-full items-center gap-3 rounded-[8px] border border-primary/20 bg-primary/[0.04] px-3 py-2.5 text-left">
+      <Check className="size-4 shrink-0 text-primary" />
+      <div className="min-w-0">
+        <span className="text-[length:var(--conversation-text-font-size)] font-semibold">
+          Đã sẵn sàng dùng thử miễn phí — không cần làm gì thêm
+        </span>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          Dùng được ngay, có giới hạn lượt hỏi mỗi giờ. Phù hợp để làm quen phần mềm.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function FeaturedProviderRow({
   onSelect,
-  provider
+  provider,
+  displayPitch,
+  displayTitle
 }: {
   onSelect: (provider: OAuthProvider) => void
   provider: OAuthProvider
+  displayPitch?: string
+  displayTitle?: string
 }) {
   const { t } = useI18n()
   const loggedIn = provider.status?.logged_in
+
+  const title = displayTitle ?? providerTitle(provider)
+
+  const pitch =
+    displayPitch ??
+    (provider.id === 'openai-codex'
+      ? 'Đăng nhập bằng tài khoản ChatGPT, không cần API key riêng.'
+      : t.onboarding.featuredPitch)
 
   return (
     <button
@@ -44,7 +72,7 @@ export function FeaturedProviderRow({
         <div className="flex items-center gap-2">
           <img alt="" className="size-5 shrink-0 rounded" src={assetPath('apple-touch-icon.png')} />
           <span className="text-[length:var(--conversation-text-font-size)] font-semibold">
-            {providerTitle(provider)}
+            {title}
           </span>
           {loggedIn ? (
             <ConnectedTag />
@@ -55,7 +83,7 @@ export function FeaturedProviderRow({
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.onboarding.featuredPitch}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{pitch}</p>
       </div>
       <ChevronRight className="size-4 shrink-0 text-primary transition group-hover:translate-x-0.5" />
     </button>

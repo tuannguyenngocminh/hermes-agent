@@ -9,7 +9,7 @@
 
 import { useStore } from '@nanostores/react'
 import { type ComponentProps, lazy, memo, type ReactNode, Suspense, useMemo } from 'react'
-import { Navigate, Route, Routes, useParams } from 'react-router'
+import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router'
 
 import { ContribBoundary } from '@/contrib/react/boundary'
 import { useContributions } from '@/contrib/react/use-contributions'
@@ -19,7 +19,7 @@ import { $freshDraftReady, $gatewayState } from '@/store/session'
 import { ChatView } from '../chat'
 import { ChatSidebar } from '../chat/sidebar'
 import { TerminalPaneChrome } from '../right-sidebar/terminal/chrome'
-import { contributedRoutes, NEW_CHAT_ROUTE, ROUTES_AREA, sessionRoute } from '../routes'
+import { COMPOSER_ROUTE, contributedRoutes, DASHBOARD_AREA, NEW_CHAT_ROUTE, ROUTES_AREA, sessionRoute } from '../routes'
 import { useStatusSnapshot } from '../shell/hooks/use-status-snapshot'
 import { useStatusbarItems } from '../shell/hooks/use-statusbar-items'
 import { ModelMenuPanel } from '../shell/model-menu-panel'
@@ -40,6 +40,24 @@ export function LegacySessionRedirect() {
   const { sessionId } = useParams()
 
   return <Navigate replace to={sessionId ? sessionRoute(sessionId) : NEW_CHAT_ROUTE} />
+}
+
+function DashboardPlaceholder() {
+  const navigate = useNavigate()
+
+  return (
+    <main aria-label="Super Agent work dashboard placeholder" className="flex h-full flex-col gap-3 p-6">
+      <h1 className="text-2xl font-semibold">Dashboard công việc</h1>
+      <p className="text-muted-foreground">Dashboard đang được chuẩn bị. Bắt đầu một phiên mới để làm việc.</p>
+      <button
+        className="w-fit rounded-md bg-primary px-4 py-2 text-primary-foreground"
+        onClick={() => navigate(COMPOSER_ROUTE)}
+        type="button"
+      >
+        Bắt đầu phiên mới
+      </button>
+    </main>
+  )
 }
 
 export const SidebarSurface = memo(function SidebarSurface({
@@ -116,7 +134,11 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
   const activeGatewayProfile = useStore($activeGatewayProfile)
   const gatewayState = useStore($gatewayState)
   useContributions(ROUTES_AREA)
+  const dashboardContributions = useContributions(DASHBOARD_AREA)
   const routeContributions = contributedRoutes()
+  // useContributions returns the registry's existing `order`-sorted snapshot;
+  // the first Dashboard contribution wins if more than one is enabled.
+  const dashboardContribution = dashboardContributions[0]
 
   // Recapture the live gateway instance whenever the connection state flips.
   // getGateway reads a controller ref, so gatewayState is the intentional
@@ -162,7 +184,17 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
 
   return (
     <Routes>
-      <Route element={chatView} index />
+      <Route
+        element={page(
+          dashboardContribution?.render ? (
+            <ContribBoundary id={dashboardContribution.id}>{dashboardContribution.render()}</ContribBoundary>
+          ) : (
+            <DashboardPlaceholder />
+          )
+        )}
+        index
+      />
+      <Route element={chatView} path={COMPOSER_ROUTE.slice(1)} />
       <Route element={chatView} path=":sessionId" />
       <Route element={page(<SkillsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="skills" />
       <Route element={page(<MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="messaging" />
@@ -184,9 +216,9 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
           path={route.path.slice(1)}
         />
       ))}
-      <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="new" />
+      <Route element={<Navigate replace to={COMPOSER_ROUTE} />} path="new" />
       <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
-      <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="*" />
+      <Route element={<Navigate replace to={COMPOSER_ROUTE} />} path="*" />
     </Routes>
   )
 })

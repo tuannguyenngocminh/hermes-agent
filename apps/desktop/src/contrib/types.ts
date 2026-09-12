@@ -1,4 +1,26 @@
+import type React from 'react'
 import type { ReactNode } from 'react'
+
+export interface FloatingPaneRenderContext {
+  collapsed: boolean
+  onClose: () => void
+  onToggleCollapse: () => void
+  dragHandleProps: {
+    onPointerDown: React.PointerEventHandler<HTMLElement>
+    onPointerMove: React.PointerEventHandler<HTMLElement>
+    onPointerUp: React.PointerEventHandler<HTMLElement>
+    style: React.CSSProperties
+  }
+}
+
+export interface DockedPaneRenderContext {
+  onClose: () => void
+}
+
+export interface ContributionRenderContext {
+  docked?: DockedPaneRenderContext
+  floating?: FloatingPaneRenderContext
+}
 
 /**
  * Where a contribution came from. `'core'` is the app's own default UI;
@@ -34,7 +56,7 @@ export interface Contribution {
   /** Soft disable without unregistering. `false` hides it. */
   enabled?: boolean
   /** Renders the contribution's content (UI contributions). */
-  render?: () => ReactNode
+  render?: (context?: ContributionRenderContext) => ReactNode
   /**
    * Declarative payload for data contributions (Family B): layout presets,
    * themes, commands — anything consumed by an engine rather than rendered.

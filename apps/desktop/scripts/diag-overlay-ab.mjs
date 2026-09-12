@@ -18,7 +18,7 @@ const median = arr => { const s = [...arr].sort((a,b)=>a-b); return s[Math.floor
 
 async function wsUrl() {
   const d = await (await fetch('http://127.0.0.1:9222/json/list')).json()
-  return d.find(t => t.type === 'page' && (t.url||'').includes('5174')).webSocketDebuggerUrl
+  return d.find(t => t.type === 'page' && (t.url||'').includes('5175')).webSocketDebuggerUrl
 }
 
 async function measureOnce(ws, setup, holdMs) {

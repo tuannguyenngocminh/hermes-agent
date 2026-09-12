@@ -1,19 +1,16 @@
 import { cn } from '@/lib/utils'
 
-const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
-
-// Brand badge: nous-girl mark on a white tile, identical in light/dark.
-// Fills the tile (softly rounded); size via className (default size-14).
+// Approved Super Agent placeholder mark until the final artwork is supplied (BUILD-PLAN.md BP-18/BP-19D).
 export function BrandMark({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span
       className={cn(
-        'inline-flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white',
+        'inline-flex size-14 shrink-0 items-center justify-center rounded-[25%] bg-[#E65719] font-sans text-[0.7em] font-extrabold tracking-tight text-[#FEFBF8]',
         className
       )}
       {...props}
     >
-      <img alt="" className="size-full object-contain" src={assetPath('nous-girl.jpg')} />
+      <span aria-hidden="true">SA</span>
     </span>
   )
 }

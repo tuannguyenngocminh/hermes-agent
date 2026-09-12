@@ -111,6 +111,13 @@ def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
         return err
+    # Only the fixed profile-source session may hide its model-facing workflow
+    # scaffold. Ordinary clients cannot turn arbitrary user prompts invisible.
+    display_kind = (
+        "hidden"
+        if session.get("profile_source") and params.get("display_kind") == "hidden"
+        else None
+    )
     if (limit_message := _ensure_active_session_slot(sid, session)) is not None:
         return _err(rid, 4090, limit_message)
     if truncate_user_ordinal is not None and isinstance(text, str):
@@ -241,10 +248,12 @@ def _(rid, params: dict) -> dict:
         session["running"] = True
         session["_turn_cancel_requested"] = False
         session["last_active"] = time.time()
-        _start_inflight_turn(session, text)
+        _start_inflight_turn(session, text, display_kind=display_kind)
 
     if turn_isolation:
-        isolated_response = _submit_prompt_to_compute_host(rid, sid, session, text)
+        isolated_response = _submit_prompt_to_compute_host(
+            rid, sid, session, text, display_kind=display_kind
+        )
         if not isolated_response.get("error"):
             return isolated_response
         logger.warning(
@@ -323,7 +332,7 @@ def _(rid, params: dict) -> dict:
                     },
                 )
                 return
-        _run_prompt_submit(rid, sid, session, text)
+        _run_prompt_submit(rid, sid, session, text, display_kind=display_kind)
 
     run_thread = threading.Thread(target=run_after_agent_ready, daemon=True)
     # Keep a handle so session.interrupt can tell a live turn from a stuck

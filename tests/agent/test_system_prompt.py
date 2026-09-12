@@ -5,7 +5,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agent.system_prompt import build_system_prompt, build_system_prompt_parts
+from agent.system_prompt import (
+    build_system_prompt,
+    build_system_prompt_parts,
+    load_super_agent_instruction,
+)
 
 
 def _make_agent(**overrides):
@@ -80,6 +84,51 @@ def _prompt_parts(agent):
         patch("run_agent.build_context_files_prompt", return_value=""),
     ):
         return build_system_prompt_parts(agent)
+
+
+class TestSuperAgentInstruction:
+    def test_loader_reads_instruction_from_hermes_home(self, monkeypatch, tmp_path):
+        instruction = "# Super Agent — Instruction\n\napproved instruction\n"
+        resource_dir = tmp_path / "resources"
+        resource_dir.mkdir()
+        (resource_dir / "super-agent-instruction.md").write_text(instruction, encoding="utf-8")
+        monkeypatch.setattr("agent.system_prompt.get_hermes_home", lambda: tmp_path)
+
+        assert load_super_agent_instruction() == instruction.strip()
+
+    def test_instruction_is_injected_into_stable_only(self, monkeypatch):
+        import agent.system_prompt as system_prompt
+
+        instruction = "APPROVED_SUPER_AGENT_INSTRUCTION"
+        monkeypatch.setattr(system_prompt, "load_super_agent_instruction", lambda: instruction)
+
+        parts = _prompt_parts(_make_agent())
+
+        assert instruction in parts["stable"]
+        assert instruction not in parts["context"]
+        assert instruction not in parts["volatile"]
+
+    def test_missing_instruction_keeps_existing_prompt_working(self, monkeypatch):
+        import agent.system_prompt as system_prompt
+
+        monkeypatch.setattr(system_prompt, "load_super_agent_instruction", lambda: None)
+
+        parts = _prompt_parts(_make_agent())
+
+        assert parts["stable"]
+        assert "APPROVED_SUPER_AGENT_INSTRUCTION" not in parts["stable"]
+
+    def test_instruction_read_error_fails_open(self, monkeypatch):
+        import agent.system_prompt as system_prompt
+
+        def fail_read():
+            raise OSError("instruction is unreadable")
+
+        monkeypatch.setattr(system_prompt, "load_super_agent_instruction", fail_read)
+
+        parts = _prompt_parts(_make_agent())
+
+        assert parts["stable"]
 
 
 def _init_code_repo(path):

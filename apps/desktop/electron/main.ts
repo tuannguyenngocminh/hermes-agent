@@ -32,10 +32,14 @@ import {
 import nodePty from 'node-pty'
 
 import { classifyActiveRuntime } from './active-runtime-state'
+import { ensureDailyReviewSkillSetup } from './daily-review-skill-setup'
+import { ensureProfileSourceSetup } from './profile-source-setup'
+import { ensureSuperAgentWorkflowSetup } from './super-agent-workflow-setup'
+import { ensureSuperAgentInstructionSetup } from './super-agent-instruction-setup'
 import { stopBackendChild as stopBackendChildImpl } from './backend-child'
 import { dashboardFallbackArgs, sourceDeclaresServe } from './backend-command'
 import { createBackendConnectionState } from './backend-connection-state'
-import { buildDesktopBackendEnv, hermesManagedNodePathEntries, normalizeHermesHomeRoot } from './backend-env'
+import { buildDesktopBackendEnv, hermesManagedNodePathEntries, normalizeSuperAgentHomeRoot } from './backend-env'
 import { isReauthRequiredError, waitForHermesReady } from './backend-health'
 import {
   canImportHermesCli,
@@ -46,7 +50,7 @@ import {
 } from './backend-probes'
 import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { shouldLatchBackendStartFailure, shouldLatchRemoteReauthFailure } from './backend-start-failure'
-import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
+import { detectRemoteDisplay, gpuCommandLineSwitches, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
 import { decideBootstrapRepair } from './bootstrap-repair-guard'
 import { runBootstrap } from './bootstrap-runner'
 import { applyConnectionChange, resolveTerminalConnection } from './connection-apply'
@@ -95,6 +99,8 @@ import { findGitBash as _findGitBash } from './find-git-bash'
 import { installFoundInPageForwarder, performFind, stopFind } from './find-in-page'
 import { createFirstRunSetupGate } from './first-run-setup-gate'
 import { readDirForIpc } from './fs-read-dir'
+import { mkdirForIpc } from './fs-mkdir'
+import { writeTextFileSafeForIpc } from './fs-write-safe'
 import { probeGatewayWebSocket } from './gateway-ws-probe'
 import { scanGitRepos } from './git-repo-scan'
 import {
@@ -209,6 +215,7 @@ import {
 import { formatBlockerMessage, formatProbeFailedMessage, scanVenvBlockers } from './venv-blocker-scan'
 import { fetchMarketplaceThemes, searchMarketplaceThemes } from './vscode-marketplace'
 import { createWakeIndicatorWindowController } from './wake-indicator-window'
+import { showWindowWhenReadyOrAfterTimeout } from './window-visibility'
 import {
   computeWindowOptions,
   debounce,
@@ -285,9 +292,9 @@ const REMOTE_DISPLAY_REASON = detectRemoteDisplay()
 
 if (REMOTE_DISPLAY_REASON) {
   app.disableHardwareAcceleration()
-  // Belt-and-suspenders for X11/VNC, where the Viz compositor can still glitch
-  // with only --disable-gpu: force compositing onto the CPU too.
-  app.commandLine.appendSwitch('disable-gpu-compositing')
+  for (const switchName of gpuCommandLineSwitches(REMOTE_DISPLAY_REASON)) {
+    app.commandLine.appendSwitch(switchName)
+  }
   console.log(
     `[hermes] remote display detected (${REMOTE_DISPLAY_REASON}); disabling GPU hardware acceleration to prevent flicker`
   )
@@ -522,24 +529,18 @@ if (INSTALL_STAMP) {
   )
 }
 
-// HERMES_HOME — the user-facing root for everything Hermes-related. Mirrors
-// scripts/install.ps1's $HermesHome and scripts/install.sh's $HERMES_HOME.
+// SUPER_AGENT_HOME — the user-facing root for Super Agent data.
 //
 // Defaults:
-//   Windows: %LOCALAPPDATA%\hermes (matches install.ps1)
-//   macOS / Linux: ~/.hermes (matches install.sh)
-//
-// Special case for Windows: if the user has a legacy ~/.hermes directory
-// (e.g., from a prior pip install or a manual setup) AND no
-// %LOCALAPPDATA%\hermes yet, prefer the legacy path so we don't orphan their
-// existing config / sessions / .env. New installs go to %LOCALAPPDATA%.
+//   Windows: %LOCALAPPDATA%\super-agent
+//   macOS / Linux: ~/.super-agent
 //
 // HERMES_DESKTOP_USER_DATA_DIR (used by test:desktop:fresh) puts the sandbox
-// HERMES_HOME beneath the throwaway userData dir so a fresh-install run never
-// touches the user's real ~/.hermes / %LOCALAPPDATA%\hermes.
+// data home beneath the throwaway userData dir so a fresh-install run never
+// touches the user's real data directory.
 function resolveHermesHome() {
-  if (process.env.HERMES_HOME) {
-    return normalizeHermesHomeRoot(process.env.HERMES_HOME)
+  if (process.env.SUPER_AGENT_HOME) {
+    return normalizeSuperAgentHomeRoot(process.env.SUPER_AGENT_HOME)
   }
 
   if (USER_DATA_OVERRIDE) {
@@ -548,32 +549,23 @@ function resolveHermesHome() {
 
   if (IS_WINDOWS) {
     // A GUI app launched from Explorer inherits the environment block captured
-    // at login, so a HERMES_HOME set via `setx` AFTER login is invisible in
+    // at login, so a SUPER_AGENT_HOME set via `setx` AFTER login is invisible in
     // process.env even though the CLI (a fresh shell) sees it. Without this the
-    // backend silently falls back to %LOCALAPPDATA%\hermes and reports "No
+    // backend silently falls back to %LOCALAPPDATA%\super-agent and reports "No
     // inference provider configured" despite a valid configured home (#45471).
     // Consult the live User-scoped registry value before the default below.
-    const fromRegistry = readWindowsUserEnvVar('HERMES_HOME')
+    const fromRegistry = readWindowsUserEnvVar('SUPER_AGENT_HOME')
 
     if (fromRegistry) {
-      return normalizeHermesHomeRoot(fromRegistry)
+      return normalizeSuperAgentHomeRoot(fromRegistry)
     }
   }
 
   if (IS_WINDOWS && process.env.LOCALAPPDATA) {
-    const localappdata = path.join(process.env.LOCALAPPDATA, 'hermes')
-    const legacy = path.join(app.getPath('home'), '.hermes')
-
-    // Migrate transparently to LOCALAPPDATA, but honour an existing legacy
-    // ~/.hermes setup (no LOCALAPPDATA install yet) so users don't lose state.
-    if (!directoryExists(localappdata) && directoryExists(legacy)) {
-      return legacy
-    }
-
-    return localappdata
+    return path.join(process.env.LOCALAPPDATA, 'super-agent')
   }
 
-  return path.join(app.getPath('home'), '.hermes')
+  return path.join(app.getPath('home'), '.super-agent')
 }
 
 const HERMES_HOME = resolveHermesHome()
@@ -664,7 +656,7 @@ const BOOT_FAKE_STEP_MS = (() => {
   return Math.max(120, raw)
 })()
 
-const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME || 'Hermes'
+const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME || 'Super Agent'
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
 
@@ -970,7 +962,7 @@ app.setName(APP_NAME)
 // need this, so gate it on Windows. (Fixes: desktop approval/turn notifications
 // never firing on Windows.)
 if (IS_WINDOWS) {
-  app.setAppUserModelId('com.nousresearch.hermes')
+  app.setAppUserModelId('com.superagent.desktop')
 }
 
 // Seed the native About panel with the live Hermes version. This is refreshed
@@ -1125,7 +1117,7 @@ let nativeThemeListenerInstalled = false
 let bootProgressState = {
   error: null,
   fakeMode: BOOT_FAKE_MODE,
-  message: 'Waiting to start Hermes backend',
+  message: 'Waiting to start Super Agent backend',
   phase: 'idle',
   progress: 0,
   running: false,
@@ -1787,7 +1779,7 @@ async function waitForUpdateToFinish() {
 
       await advanceBootProgress(
         'backend.update-wait',
-        'An update is finishing — Hermes will start automatically when it completes…',
+        'An update is finishing — Super Agent will start automatically when it completes…',
         12
       )
     },
@@ -8447,6 +8439,16 @@ async function startHermes() {
       ensureLocalRuntime: ensureRuntime,
       prepareLocalBackend: async () => {
         await advanceBootProgress('backend.runtime', 'Resolving Hermes runtime', 28)
+        const workflowSource = path.join(resolveUpdateRoot(), 'apps', 'desktop', 'assets', 'super-agent-workflows', 'profile-source-v4', 'SKILL.md')
+        ensureProfileSourceSetup({ hermesHome: HERMES_HOME, workflowSource })
+        const dailyReviewWorkflowSource = path.join(resolveUpdateRoot(), 'apps', 'desktop', 'assets', 'super-agent-workflows', 'tro-ly', 'sieu-tro-ly-ra-soat-hang-ngay', 'SKILL.md')
+        ensureDailyReviewSkillSetup({ hermesHome: HERMES_HOME, workflowSource: dailyReviewWorkflowSource })
+        const chiaViecWorkflowSource = path.join(resolveUpdateRoot(), 'apps', 'desktop', 'assets', 'super-agent-workflows', 'tro-ly', 'tro-ly-chia-viec', 'SKILL.md')
+        ensureSuperAgentWorkflowSetup({ hermesHome: HERMES_HOME, workflowName: 'tro-ly-chia-viec', workflowSource: chiaViecWorkflowSource })
+        const noiViecWorkflowSource = path.join(resolveUpdateRoot(), 'apps', 'desktop', 'assets', 'super-agent-workflows', 'tro-ly', 'tro-ly-noi-viec', 'SKILL.md')
+        ensureSuperAgentWorkflowSetup({ hermesHome: HERMES_HOME, workflowName: 'tro-ly-noi-viec', workflowSource: noiViecWorkflowSource })
+        const superAgentInstructionSource = path.join(resolveUpdateRoot(), 'apps', 'desktop', 'assets', 'resources', 'super-agent-instruction.md')
+        ensureSuperAgentInstructionSetup({ hermesHome: HERMES_HOME, instructionSource: superAgentInstructionSource })
 
         return resolveHermesBackend(backendArgs)
       },
@@ -8752,7 +8754,7 @@ function spawnSecondaryWindow({ sessionId, watch }: { sessionId?: string; watch?
     height: SESSION_WINDOW_MIN_HEIGHT,
     minWidth: SESSION_WINDOW_MIN_WIDTH,
     minHeight: SESSION_WINDOW_MIN_HEIGHT,
-    title: 'Hermes',
+    title: APP_NAME,
     titleBarStyle: 'hidden',
     titleBarOverlay: getTitleBarOverlayOptions(),
     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
@@ -8774,10 +8776,10 @@ function spawnSecondaryWindow({ sessionId, watch }: { sessionId?: string; watch?
     win.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
   }
 
-  win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) {
-      win.show()
-    }
+  showWindowWhenReadyOrAfterTimeout(win, {
+    label: 'Session window',
+    log: rememberLog,
+    show: () => win.show()
   })
 
   win.on('enter-full-screen', () => sendWindowStateChanged(true))
@@ -8838,7 +8840,7 @@ function createInstanceWindow() {
     ...nextInstanceBounds(),
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
-    title: 'Hermes',
+    title: APP_NAME,
     titleBarStyle: 'hidden',
     titleBarOverlay: getTitleBarOverlayOptions(),
     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
@@ -8856,10 +8858,10 @@ function createInstanceWindow() {
     win.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
   }
 
-  win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) {
-      win.show()
-    }
+  showWindowWhenReadyOrAfterTimeout(win, {
+    label: 'Instance window',
+    log: rememberLog,
+    show: () => win.show()
   })
 
   // Per-window fullscreen chrome: send this window its own titlebar inset so its
@@ -9243,7 +9245,7 @@ function createWindow() {
     ...computeWindowOptions(savedWindowState, screen.getAllDisplays()),
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
-    title: 'Hermes',
+    title: APP_NAME,
     // Frameless title bar on every platform so the renderer can paint the
     // "hide sidebar" button (and other left-side titlebar tools) flush with
     // the top edge — matching the macOS layout where the traffic lights sit
@@ -9292,11 +9294,13 @@ function createWindow() {
     mainWindow.maximize()
   }
 
-  mainWindow.once('ready-to-show', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show()
-    }
+  showWindowWhenReadyOrAfterTimeout(mainWindow, {
+    label: 'Primary window',
+    log: rememberLog,
+    show: () => mainWindow?.show()
+  })
 
+  mainWindow.once('ready-to-show', () => {
     // Persist geometry as soon as the window is visible so a crash before the
     // first clean resize/move/close still captures the restored bounds (#56726).
     schedulePersistWindowState()
@@ -11059,6 +11063,14 @@ function disposeTerminalSession(id) {
 }
 
 ipcMain.handle('hermes:fs:readDir', async (_event, dirPath) => readDirForIpc(dirPath))
+
+ipcMain.handle('hermes:fs:mkdir', async (_event, requestedPath, baseDir) =>
+  mkdirForIpc(String(requestedPath || ''), { baseDir: String(baseDir || '') })
+)
+
+ipcMain.handle('hermes:fs:writeTextSafe', async (_event, requestedPath, content, baseDir) =>
+  writeTextFileSafeForIpc(String(requestedPath || ''), String(content ?? ''), { baseDir: String(baseDir || '') })
+)
 
 ipcMain.handle('hermes:fs:gitRoot', async (_event, startPath) => gitRootForIpc(startPath))
 

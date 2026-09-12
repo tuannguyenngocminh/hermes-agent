@@ -11,8 +11,10 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { registry } from '@/contrib/registry'
+import type { ContributionRenderContext } from '@/contrib/types'
 
 import { FloatingPanes } from './floating-panes'
+import { anchoredRect } from './floating-rect'
 
 let root: null | Root = null
 let container: HTMLDivElement | null = null
@@ -28,7 +30,7 @@ function render(ui: ReactNode) {
   })
 }
 
-const card = () => document.querySelector<HTMLElement>('[data-floating-pane="hud"]')
+const card = (id = 'hud') => document.querySelector<HTMLElement>(`[data-floating-pane="${id}"]`)
 
 const grab = () => card()!.querySelector('header')!
 
@@ -199,5 +201,167 @@ describe('FloatingPanes (live DOM)', () => {
     render(<FloatingPanes />)
 
     expect(document.querySelectorAll('[data-floating-pane]').length).toBe(2)
+  })
+
+  it('lets a custom-header pane own its chrome while retaining host controls', () => {
+    disposers.push(
+      registry.register({
+        area: 'panes',
+        data: { customHeader: true, placement: 'floating', width: '224px' },
+        id: 'hud',
+        render: (context?: ContributionRenderContext) => {
+          const floating = context?.floating
+
+          return (
+            <div data-testid="custom-pane">
+              <header data-testid="custom-header" {...floating?.dragHandleProps}>
+              <span>Custom HUD</span>
+              <button data-floating-no-drag onClick={floating?.onClose} type="button">
+                Close
+              </button>
+              <button onClick={floating?.onToggleCollapse} type="button">
+                Collapse
+              </button>
+              </header>
+              {!floating?.collapsed && <p data-testid="custom-body">custom body</p>}
+            </div>
+          )
+        },
+        title: 'HUD'
+      })
+    )
+    render(<FloatingPanes />)
+
+    expect(card()!.className).not.toContain('rounded-xl')
+    expect(card()!.querySelector('[data-testid="custom-header"]')).toBeTruthy()
+    expect(card()!.querySelectorAll('header')).toHaveLength(1)
+    expect(card()!.querySelector('[data-testid="custom-body"]')).toBeTruthy()
+
+    act(() => {
+      card()!.querySelector<HTMLButtonElement>('button:not([data-floating-no-drag])')!.click()
+    })
+    expect(card()!.style.width).toBe('')
+    expect(card()!.style.height).toBe('')
+    expect(card()!.querySelector('[data-testid="custom-body"]')).toBeNull()
+
+    act(() => {
+      card()!.querySelector<HTMLButtonElement>('[data-floating-no-drag]')!.click()
+    })
+    expect(card()).toBeNull()
+  })
+
+  it('moves a custom-header pane without toggling when its toggle button is dragged', () => {
+    disposers.push(
+      registry.register({
+        area: 'panes',
+        data: { anchor: 'top-left', customHeader: true, placement: 'floating', width: '224px' },
+        id: 'hud2',
+        render: (context?: ContributionRenderContext) => {
+          const floating = context?.floating
+
+          return (
+            <div data-testid="custom-pane">
+              <header data-testid="custom-header" {...floating?.dragHandleProps}>
+                <button onClick={floating?.onToggleCollapse} type="button">
+                  Toggle
+                </button>
+              </header>
+              {!floating?.collapsed && <p data-testid="custom-body">custom body</p>}
+            </div>
+          )
+        },
+        title: 'HUD'
+      })
+    )
+    render(<FloatingPanes />)
+
+    const header = card('hud2')!.querySelector('[data-testid="custom-header"]')!
+
+    pointer(header, 'pointerdown', 100, 100)
+    pointer(header, 'pointermove', 260, 240)
+    pointer(header, 'pointerup', 260, 240)
+    act(() => header.querySelector('button')!.click())
+
+    expect(card('hud2')!.style.left).toBe('172px')
+    expect(card('hud2')!.style.top).toBe('186px')
+    expect(card('hud2')!.querySelector('[data-testid="custom-body"]')).toBeTruthy()
+  })
+
+  it('toggles a custom-header pane after a click-sized pointer session', () => {
+    disposers.push(
+      registry.register({
+        area: 'panes',
+        data: { customHeader: true, placement: 'floating', width: '224px' },
+        id: 'hud2',
+        render: (context?: ContributionRenderContext) => {
+          const floating = context?.floating
+
+          return (
+            <div data-testid="custom-pane">
+              <header data-testid="custom-header" {...floating?.dragHandleProps}>
+                <button onClick={floating?.onToggleCollapse} type="button">
+                  Toggle
+                </button>
+              </header>
+              {!floating?.collapsed && <p data-testid="custom-body">custom body</p>}
+            </div>
+          )
+        },
+        title: 'HUD'
+      })
+    )
+    render(<FloatingPanes />)
+
+    const header = card('hud2')!.querySelector('[data-testid="custom-header"]')!
+    const toggle = header.querySelector('button')!
+
+    pointer(header, 'pointerdown', 100, 100)
+    pointer(header, 'pointerup', 102, 103)
+    act(() => toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(card('hud2')!.querySelector('[data-testid="custom-body"]')).toBeNull()
+  })
+
+  it('re-anchors a collapsed custom-header pane when it expands', () => {
+    localStorage.setItem(
+      'hermes.desktop.floatingPanes.v1',
+      JSON.stringify({ hud2: { collapsed: true, x: 20, y: 50 } })
+    )
+    disposers.push(
+      registry.register({
+        area: 'panes',
+        data: { anchor: 'bottom-right', customHeader: true, placement: 'floating', width: '224px' },
+        id: 'hud2',
+        render: (context?: ContributionRenderContext) => {
+          const floating = context?.floating
+
+          return (
+            <div data-testid="custom-pane">
+              <header data-testid="custom-header" {...floating?.dragHandleProps}>
+                <button onClick={floating?.onToggleCollapse} type="button">
+                  Toggle
+                </button>
+              </header>
+              {!floating?.collapsed && <p data-testid="custom-body">custom body</p>}
+            </div>
+          )
+        },
+        title: 'HUD'
+      })
+    )
+    render(<FloatingPanes />)
+
+    const header = card('hud2')!.querySelector('[data-testid="custom-header"]')!
+    const toggle = header.querySelector('button')!
+    const expected = anchoredRect('bottom-right', { height: 180, width: 224 }, { height: 900, top: 34, width: 1440 })
+
+    pointer(header, 'pointerdown', 100, 100)
+    pointer(header, 'pointermove', 102, 102)
+    pointer(header, 'pointerup', 102, 102)
+    act(() => toggle.click())
+
+    expect(card('hud2')!.style.left).toBe(`${expected.x}px`)
+    expect(card('hud2')!.style.top).toBe(`${expected.y}px`)
+    expect(card('hud2')!.querySelector('[data-testid="custom-body"]')).toBeTruthy()
   })
 })

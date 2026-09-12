@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
 from utils import safe_json_loads
@@ -124,6 +124,21 @@ class ToolCallGuardrailConfig:
             ),
             loop_caps=LoopCapConfig.from_mapping(data.get("loop_caps")),
         )
+
+
+def source_profile_guardrail_config(base: ToolCallGuardrailConfig) -> ToolCallGuardrailConfig:
+    """Return the narrow circuit breaker for the onboarding capture tool.
+
+    A source-profile session has exactly one write tool and no useful retry path
+    for an unchanged invalid payload. Two failures are enough to stop the turn
+    and surface the error, rather than consuming the generic 500-turn budget.
+    """
+    return replace(
+        base,
+        hard_stop_enabled=True,
+        exact_failure_block_after=min(base.exact_failure_block_after, 2),
+        same_tool_failure_halt_after=min(base.same_tool_failure_halt_after, 2),
+    )
 
 
 # Default session-wide caps, matching Claude Code's v2.1.212 runaway-loop

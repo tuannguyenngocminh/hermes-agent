@@ -992,6 +992,21 @@ describe('preserveLocalPendingTurnMessages', () => {
 })
 
 describe('appendLiveSessionProjection', () => {
+  it('does not project a hidden in-flight user row', () => {
+    const restored = appendLiveSessionProjection([], {
+      session_id: 'profile-source-session',
+      inflight: {
+        user: '[IMPORTANT: hidden profile-source scaffold]',
+        display_kind: 'hidden',
+        assistant: 'Profile interview greeting',
+        streaming: true
+      }
+    })
+
+    expect(restored.filter(message => message.role === 'user')).toHaveLength(0)
+    expect(restored.filter(message => message.role === 'assistant')).toHaveLength(1)
+  })
+
   // Corrections typed while a turn ran are their own user bubbles on the same
   // turn. Resume must rebuild the prompt AND every correction, in order.
   it('projects mid-turn redirect corrections after the prompt that started the turn', () => {

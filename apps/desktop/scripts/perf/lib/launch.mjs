@@ -5,7 +5,7 @@
 // the measurement that the single-instance lock used to prevent:
 //   · its own --user-data-dir  → its own Electron single-instance lock, so it
 //     never collides with (or steals focus from) the user's running `hgui`.
-//   · its own HERMES_HOME      → its own backend + sessions, no shared state.
+//   · its own SUPER_AGENT_HOME → its own backend + sessions, no shared state.
 //   · its own --remote-debugging-port → a private CDP endpoint.
 //   · HERMES_DESKTOP_BOOT_FAKE=1 → deterministic boot overlay.
 // The synthetic scenarios drive `$messages` directly, so no LLM credits are
@@ -47,9 +47,9 @@ async function waitFor(fn, { timeoutMs, label }) {
   throw new Error(`timed out after ${timeoutMs}ms waiting for ${label}`)
 }
 
-// Seed an isolated HERMES_HOME with just enough config (NOT sessions) so the
+// Seed an isolated Super Agent home with just enough config (NOT sessions) so the
 // spawned instance reaches an empty chat view instead of the onboarding wizard.
-// A separate HERMES_HOME dir means a separate gateway lock — no collision with
+// A separate Super Agent home means a separate gateway lock — no collision with
 // the user's running app, which keeps its own sessions DB and state.
 function seedConfigFrom(sourceHome, targetHome) {
   if (!existsSync(sourceHome)) {
@@ -164,7 +164,7 @@ const ANTI_THROTTLE_FLAGS = [
  */
 export async function startIsolatedInstance({
   port = 9222,
-  devPort = 5174,
+  devPort = 5175,
   prod = false,
   coldStart = false,
   hermesHome,
@@ -229,7 +229,7 @@ export async function startIsolatedInstance({
     }
 
     // Isolated Electron: own --user-data-dir (single-instance lock scope) + own
-    // HERMES_HOME (backend + sessions). No DEV_SERVER env in prod → dist load.
+    // SUPER_AGENT_HOME (backend + sessions). No DEV_SERVER env in prod → dist load.
     const electronBin = require('electron')
     // NB: do NOT set HERMES_DESKTOP_BOOT_FAKE here — it injects artificial
     // per-phase sleeps into the boot overlay, which inflates cold-start timing
@@ -237,7 +237,7 @@ export async function startIsolatedInstance({
     // real boot sequence.
     const env = {
       ...process.env,
-      HERMES_HOME: home,
+      SUPER_AGENT_HOME: home,
       XCURSOR_SIZE: '24'
     }
 
@@ -332,7 +332,7 @@ export async function startIsolatedInstance({
 // ONE profile across runs: run 0 warms the cache (discarded), runs 1..N are the
 // warm samples. Each run steps the port so a just-killed instance can't be
 // re-attached, and we pause between runs so the single-instance lock releases.
-export async function coldStartSamples({ runs = 3, port = 9222, devPort = 5174, prod = false, warm = true } = {}) {
+export async function coldStartSamples({ runs = 3, port = 9222, devPort = 5175, prod = false, warm = true } = {}) {
   const pickNumeric = timings => Object.fromEntries(Object.entries(timings).filter(([, v]) => typeof v === 'number'))
   const samples = []
 

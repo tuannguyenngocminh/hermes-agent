@@ -745,6 +745,9 @@ async fn run_bootstrap(
         .unwrap_or_else(|| crate::paths::hermes_home().to_string_lossy().into_owned());
     let install_root = PathBuf::from(&hermes_home).join("hermes-agent");
 
+    crate::profile_source_setup::install_profile_source_setup(Path::new(&hermes_home))
+        .map_err(|err| anyhow!("prepare source-profile onboarding: {err}"))?;
+
     // Marker publish is terminal for this run: a write failure must emit Failed
     // so the UI leaves the progress state (it does not poll get_bootstrap_status).
     let marker = match write_bootstrap_complete_marker(&install_root, &pin) {

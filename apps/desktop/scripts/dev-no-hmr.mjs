@@ -16,7 +16,7 @@ import { createServer } from 'vite'
 const server = await createServer({
   configFile: new URL('../vite.config.ts', import.meta.url).pathname,
   root: new URL('../', import.meta.url).pathname,
-  server: { hmr: false, host: '127.0.0.1', port: 5174, strictPort: true }
+  server: { hmr: false, host: '127.0.0.1', port: 5175, strictPort: true }
 })
 await server.listen()
 server.printUrls()

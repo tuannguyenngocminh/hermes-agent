@@ -1,6 +1,8 @@
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router'
 
+import { $advancedMode } from '@/app/advanced-mode'
 import { closeActiveTab } from '@/app/chat/close-tab'
 import { setTerminalTakeover } from '@/app/right-sidebar/store'
 import { closeActiveTerminal, createTerminal, cycleTerminal } from '@/app/right-sidebar/terminal/terminals'
@@ -92,6 +94,7 @@ type HandlerMap = Record<string, () => void>
 export function useKeybinds(deps: KeybindRuntimeDeps): void {
   const navigate = useNavigate()
   const { resolvedMode, setMode } = useTheme()
+  const advancedMode = useStore($advancedMode)
 
   // Keep the latest closures without re-subscribing the listener.
   const handlersRef = useRef<HandlerMap>({})
@@ -154,7 +157,11 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     'nav.commandCenter': deps.toggleCommandCenter,
     'nav.settings': () => navigate(SETTINGS_ROUTE),
     'nav.profiles': () => navigate(PROFILES_ROUTE),
-    'nav.skills': () => navigateToWorkspacePage(navigate, SKILLS_ROUTE),
+    'nav.skills': () => {
+      if (advancedMode) {
+        navigateToWorkspacePage(navigate, SKILLS_ROUTE)
+      }
+    },
     'nav.messaging': () => navigateToWorkspacePage(navigate, MESSAGING_ROUTE),
     'nav.artifacts': () => navigateToWorkspacePage(navigate, ARTIFACTS_ROUTE),
     'nav.cron': () => navigate(CRON_ROUTE),

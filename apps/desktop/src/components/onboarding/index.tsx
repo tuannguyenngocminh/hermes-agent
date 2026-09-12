@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { $desktopBoot, type DesktopBootState } from '@/store/boot'
 import {
   $desktopOnboarding,
+  cancelOnboardingFlow,
   clearPendingProviderOAuth,
   closeManualOnboarding,
   confirmOnboardingModel,
@@ -32,6 +33,7 @@ import { DocsLink, FlowPanel, Status } from './flow'
 import {
   FeaturedProviderRow,
   FireworksProviderRow,
+  FreeTrialProviderRow,
   OpenRouterProviderRow,
   ProviderRow,
   sortProviders
@@ -40,6 +42,7 @@ import {
 export {
   FeaturedProviderRow,
   FireworksProviderRow,
+  FreeTrialProviderRow,
   KeyProviderRow,
   OpenRouterProviderRow,
   ProviderRow,
@@ -206,6 +209,13 @@ export function DesktopOnboardingOverlay({
   // behind), THEN finalize so the unmount lands after the fade — mirrors the
   // connecting overlay's exit choreography instead of cutting instantly.
   const [leaving, setLeaving] = useState(false)
+  const [fallbackApiKeyEnv, setFallbackApiKeyEnv] = useState<string | undefined>(undefined)
+
+  const openOpenRouterFallback = () => {
+    setFallbackApiKeyEnv('OPENROUTER_API_KEY')
+    setOnboardingMode('apikey')
+    cancelOnboardingFlow()
+  }
 
   const finalizeOnboarding = () => {
     if (leaving) {
@@ -338,9 +348,15 @@ export function DesktopOnboardingOverlay({
           {reason ? <ReasonNotice reason={reason} /> : null}
           {ready ? (
             showPicker ? (
-              <Picker ctx={ctx} />
+              <Picker ctx={ctx} initialApiKeyEnv={fallbackApiKeyEnv} />
             ) : (
-              <FlowPanel ctx={ctx} flow={flow} leaving={leaving} onBegin={finalizeOnboarding} />
+              <FlowPanel
+                ctx={ctx}
+                flow={flow}
+                leaving={leaving}
+                onBegin={finalizeOnboarding}
+                onOpenOpenRouter={openOpenRouterFallback}
+              />
             )
           ) : (
             <Preparing boot={boot} />
@@ -399,7 +415,7 @@ function Header() {
   )
 }
 
-export const FEATURED_ID = 'nous'
+export const FEATURED_ID = 'openai-codex'
 const SHOW_ALL_KEY = 'hermes-onboarding-show-all-v1'
 
 const readShowAll = () => {
@@ -420,13 +436,13 @@ const persistShowAll = (value: boolean) => {
   return value
 }
 
-export function Picker({ ctx }: { ctx: OnboardingContext }) {
+export function Picker({ ctx, initialApiKeyEnv }: { ctx: OnboardingContext; initialApiKeyEnv?: string }) {
   const { t } = useI18n()
   const { localEndpoint, manual, mode, providers } = useStore($desktopOnboarding)
   const [showAll, setShowAll] = useState(readShowAll)
   // Which key-form option to preselect when we flip to 'apikey' mode. The
   // OpenRouter row selects its key; the generic link lands on the first option.
-  const [apiKeyInitialEnv, setApiKeyInitialEnv] = useState<string | undefined>(undefined)
+  const [apiKeyInitialEnv, setApiKeyInitialEnv] = useState<string | undefined>(initialApiKeyEnv)
 
   const openKeyForm = (envKey?: string) => {
     setApiKeyInitialEnv(envKey)
@@ -466,6 +482,21 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
 
   const select = (p: OAuthProvider) => void startProviderOAuth(p, ctx)
   const featured = ordered.find(p => p.id === FEATURED_ID) ?? null
+
+  if (!manual && featured) {
+    return (
+      <div className="grid gap-2">
+        <FreeTrialProviderRow />
+        <FeaturedProviderRow
+          displayPitch="Đăng nhập bằng tài khoản ChatGPT của bạn — không giới hạn lượt, phản hồi chính xác hơn cho việc quan trọng."
+          displayTitle="Đăng nhập ChatGPT (khuyên dùng)"
+          onSelect={select}
+          provider={featured}
+        />
+      </div>
+    )
+  }
+
   const rest = featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered
   // Collapse the secondary providers behind a disclosure only when Nous
   // Portal is present to anchor the choice — otherwise show the full list.
