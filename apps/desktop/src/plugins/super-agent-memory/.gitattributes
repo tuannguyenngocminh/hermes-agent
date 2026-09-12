@@ -1,0 +1,3 @@
+# Nội dung import qua Vite `?raw` phải giữ nguyên LF.
+# Windows checkout với core.autocrlf=true sẽ đổi sang CRLF và làm lệch byte nội dung runtime.
+*.md text eol=lf
