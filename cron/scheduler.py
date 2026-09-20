@@ -461,6 +461,11 @@ from cron.jobs import (
     use_cron_store,
 )
 from cron.executions import create_execution, finish_execution, mark_execution_running
+from cron.b1_report import (
+    B1ReviewTelemetry,
+    capture_b1_review,
+    save_b1_report,
+)
 
 # Sentinel: when a cron agent has nothing new to report, it can start its
 # response with this marker to suppress delivery.  Output is still saved
@@ -598,6 +603,47 @@ def _capture_b1_review_scope(job: dict, *, previous_marker: Optional[str] = None
     if previous_marker is None:
         previous_marker = _read_latest_b1_coverage_marker(job.get("id", ""))
     return _build_b1_review_scope(job, previous_marker=previous_marker)
+
+
+@contextlib.contextmanager
+def _b1_review_telemetry_scope(
+    job: dict, execution_id: str, review_scope: Optional[dict],
+):
+    """Capture only the exact B1 agent run and carry it into its worker."""
+    if not _is_b1_review_job(job):
+        yield None
+        return
+    with capture_b1_review(job.get("id", ""), execution_id, review_scope) as telemetry:
+        yield telemetry
+
+
+def _persist_b1_report(
+    job: dict,
+    execution_id: str,
+    raw_output: str,
+    final_response: str,
+    review_scope: Optional[dict],
+    telemetry: B1ReviewTelemetry,
+):
+    """Persist the clean report and make write failures explicit to scheduler."""
+    try:
+        return save_b1_report(
+            job_id=job["id"],
+            run_id=execution_id,
+            raw_output=raw_output,
+            final_response=final_response,
+            review_scope=review_scope,
+            telemetry=telemetry,
+        )
+    except Exception as exc:
+        logger.exception(
+            "B1 report persistence failed for job '%s' run '%s': %s",
+            job.get("id", ""), execution_id, exc,
+        )
+        raise RuntimeError(
+            f"B1 report persistence failed for job '{job.get('id', '')}' "
+            f"run '{execution_id}': {exc}"
+        ) from exc
 
 
 def _render_b1_review_scope(scope: dict) -> str:
@@ -6045,21 +6091,22 @@ def _run_one_job_body(
         # interpreter-shutdown guard in _deliver_result.
         _deferred_agents: list = []
         try:
-            if fire_claim_lost is None:
-                success, output, final_response, error = run_job(
-                    job,
-                    defer_agent_teardown=_deferred_agents,
-                    extra_prompt=extra_prompt,
-                    review_scope=review_scope,
-                )
-            else:
-                success, output, final_response, error = run_job(
-                    job,
-                    defer_agent_teardown=_deferred_agents,
-                    extra_prompt=extra_prompt,
-                    review_scope=review_scope,
-                    cancel_event=fire_claim_lost,
-                )
+            with _b1_review_telemetry_scope(job, execution_id, review_scope) as b1_telemetry:
+                if fire_claim_lost is None:
+                    success, output, final_response, error = run_job(
+                        job,
+                        defer_agent_teardown=_deferred_agents,
+                        extra_prompt=extra_prompt,
+                        review_scope=review_scope,
+                    )
+                else:
+                    success, output, final_response, error = run_job(
+                        job,
+                        defer_agent_teardown=_deferred_agents,
+                        extra_prompt=extra_prompt,
+                        review_scope=review_scope,
+                        cancel_event=fire_claim_lost,
+                    )
         except BaseException:
             # run_job's finally still hands back the agent when it raises; tear
             # it down here so a failed run never leaks its async resources
@@ -6116,8 +6163,19 @@ def _run_one_job_body(
                 if not owns_output:
                     raise _FireClaimLostDuringSideEffect
                 output_file = save_job_output(job["id"], output)
+                if b1_telemetry is not None:
+                    report_file = _persist_b1_report(
+                        job,
+                        execution_id,
+                        output,
+                        final_response,
+                        review_scope,
+                        b1_telemetry,
+                    )
             if verbose:
                 logger.info("Output saved to: %s", output_file)
+                if b1_telemetry is not None:
+                    logger.info("B1 report saved to: %s", report_file)
 
             # If the gateway shutdown killed this job's tool subprocess
             # mid-flight (#60432), the agent may still have produced a

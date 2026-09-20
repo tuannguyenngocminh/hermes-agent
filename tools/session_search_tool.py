@@ -38,6 +38,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from hermes_state_common import _RESET_END_REASONS
+from cron.b1_report import record_session_search_result
 
 # Sources that are excluded from session browsing/searching by default.
 # Third-party integrations tag their sessions with HERMES_SESSION_SOURCE=tool;
@@ -1158,7 +1159,7 @@ def session_search(
             return tool_error(format_session_db_unavailable(), success=False)
 
     try:
-        return _session_search_impl(
+        result = _session_search_impl(
             query=query,
             role_filter=role_filter,
             limit=limit,
@@ -1175,6 +1176,23 @@ def session_search(
             last_active_before=last_active_before,
             _owned_dbs=owned_dbs,
         )
+        record_session_search_result(
+            mode="",
+            requested_session_id=session_id,
+            result_text=result,
+        )
+        return result
+    except Exception as exc:
+        record_session_search_result(
+            mode="",
+            requested_session_id=session_id,
+            result_text=json.dumps({
+                "success": False,
+                "mode": "read" if session_id else "unknown",
+                "error": str(exc),
+            }),
+        )
+        raise
     finally:
         for owned_db in reversed(owned_dbs):
             try:
