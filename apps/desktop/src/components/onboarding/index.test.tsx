@@ -74,14 +74,13 @@ describe('onboarding Picker', () => {
       )
     ).toBeTruthy()
     expect(screen.getByText('Recommended')).toBeTruthy()
+    // Fireworks stays behind the disclosure with the other alternatives; only
+    // Nous Portal is visible before the user expands the list.
+    expect(screen.queryByText('Fireworks AI')).toBeNull()
     expect(screen.queryByText('OpenAI OAuth (ChatGPT)')).toBeNull()
     expect(screen.queryByText('Nous Portal')).toBeNull()
-    expect(screen.queryByText('Fireworks AI')).toBeNull()
     expect(screen.queryByText('OpenRouter')).toBeNull()
     expect(screen.queryByText('Anthropic API Key')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Other providers' })).toBeNull()
-    expect(screen.queryByRole('button', { name: "I'll choose a provider later" })).toBeNull()
-    expect(screen.queryByText(/API key/i)).toBeNull()
   })
 
   it('keeps the full provider picker in manual mode', () => {
@@ -96,13 +95,13 @@ describe('onboarding Picker', () => {
     const labels = screen
       .getAllByRole('button')
       .map(el => el.textContent ?? '')
-      .filter(text => /Nous Portal|Fireworks AI|OpenAI OAuth|MiniMax|OpenRouter/.test(text))
+      .filter(text => /Nous Portal|Fireworks AI|ChatGPT or Codex|MiniMax|OpenRouter/.test(text))
 
     const indexOf = (needle: string) => labels.findIndex(text => text.includes(needle))
-    expect(indexOf('OpenAI OAuth')).toBe(0)
+    expect(indexOf('ChatGPT or Codex')).toBe(0)
     expect(indexOf('Fireworks AI')).toBe(1)
     expect(indexOf('Nous Portal')).toBeGreaterThan(indexOf('Fireworks AI'))
-    expect(indexOf('MiniMax')).toBeGreaterThan(indexOf('OpenAI OAuth'))
+    expect(indexOf('MiniMax')).toBeGreaterThan(indexOf('ChatGPT or Codex'))
   })
 
   it('shows every provider directly in manual mode when no Featured provider is present', () => {

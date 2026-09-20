@@ -237,6 +237,12 @@ export async function startIsolatedInstance({
     // real boot sequence.
     const env = {
       ...process.env,
+      HERMES_HOME: home,
+      // The app's dev-CDP resolver (electron/dev-cdp.ts) appends its own
+      // remote-debugging-port switch AFTER argv, so on a non-default --port the
+      // Chromium flag below loses and the instance binds 9222 anyway. The env
+      // override is the supported knob — set it so --port actually wins.
+      HERMES_DESKTOP_CDP_PORT: String(port),
       SUPER_AGENT_HOME: home,
       XCURSOR_SIZE: '24'
     }

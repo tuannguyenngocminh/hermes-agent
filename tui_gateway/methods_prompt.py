@@ -736,7 +736,12 @@ def _(rid, params: dict) -> dict:
                     },
                 )
                 return
-        _run_prompt_submit(rid, sid, session, text, display_kind=display_kind)
+        if display_kind is None:
+            # Preserve compatibility with legacy inline runners and test
+            # doubles that predate the optional presentation metadata.
+            _run_prompt_submit(rid, sid, session, text)
+        else:
+            _run_prompt_submit(rid, sid, session, text, display_kind=display_kind)
 
     run_thread = threading.Thread(target=run_after_agent_ready, daemon=True)
     # Keep a handle so session.interrupt can tell a live turn from a stuck
