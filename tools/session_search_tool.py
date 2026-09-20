@@ -482,8 +482,22 @@ def _read_session(db, session_id: str, head: int = 20, tail: int = 10, link_prof
     return json.dumps(response, ensure_ascii=False)
 
 
-def _list_recent_sessions(db, limit: int, current_session_id: str = None, link_profile: str = None) -> str:
-    """Return metadata for the most recent sessions (no LLM calls, no FTS5)."""
+def _list_recent_sessions(
+    db,
+    limit: int,
+    current_session_id: str = None,
+    link_profile: str = None,
+    offset: int = 0,
+    last_active_after=None,
+    last_active_before=None,
+) -> str:
+    """Return one page from the canonical user-visible session set.
+
+    The database query deliberately fetches the complete filtered session set
+    before applying the current-session/lineage and time-scope filters.  That
+    keeps ``total`` and ``offset`` in the same coordinate system as the page;
+    using a raw SQL offset before those filters would skip visible sessions.
+    """
     try:
         # list_sessions_rich (include_children=False) already applies the
         # canonical child classifier (_LISTABLE_CHILD_SQL): roots, /branch
@@ -493,19 +507,31 @@ def _list_recent_sessions(db, limit: int, current_session_id: str = None, link_p
         # that predicate and re-hid legacy pre-marker reset children the SQL
         # deliberately admits — trust the query instead (#85756).
         sessions = db.list_sessions_rich(
-            limit=limit + 15,
+            limit=-1,
             exclude_sources=list(_HIDDEN_SESSION_SOURCES),
             order_by_last_active=True,
-        )  # fetch extra so we can skip current / compression roots
+            compact_rows=True,
+        )
 
         current_root, has_compression_hop = (
             _resolve_to_parent(db, current_session_id)
             if current_session_id else (None, False)
         )
 
+        def _activity_value(value):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        after = _activity_value(last_active_after)
+        before = _activity_value(last_active_before)
         results = []
+        seen_ids = set()
         for s in sessions:
             sid = s.get("id", "")
+            if not sid or sid in seen_ids:
+                continue
             if sid == current_session_id:
                 continue
             # Compression continuation: the root's original turns were
@@ -514,6 +540,12 @@ def _list_recent_sessions(db, limit: int, current_session_id: str = None, link_p
             # that root browsable.
             if has_compression_hop and current_root and sid == current_root:
                 continue
+            activity = _activity_value(s.get("last_active"))
+            if after is not None and (activity is None or activity <= after):
+                continue
+            if before is not None and (activity is None or activity >= before):
+                continue
+            seen_ids.add(sid)
             results.append({
                 "session_id": sid,
                 "link": _session_link(sid, link_profile),
@@ -524,15 +556,28 @@ def _list_recent_sessions(db, limit: int, current_session_id: str = None, link_p
                 "message_count": s.get("message_count", 0),
                 "preview": s.get("preview", ""),
             })
-            if len(results) >= limit:
-                break
+
+        total = len(results)
+        page = results[offset:offset + limit]
+        has_more = offset + len(page) < total
+        next_offset = offset + limit if has_more else None
 
         return json.dumps({
             "success": True,
             "mode": "browse",
-            "results": results,
-            "count": len(results),
-            "message": f"Showing {len(results)} most recent sessions. Pass a query= to search, or session_id+around_message_id to scroll.",
+            "results": page,
+            "count": len(page),
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+            "next_offset": next_offset,
+            "scope": {
+                "last_active_after": last_active_after,
+                "last_active_before": last_active_before,
+                "profile": link_profile or "current",
+            },
+            "message": f"Showing {len(page)} of {total} most recent sessions. Pass a query= to search, or session_id+around_message_id to scroll.",
         }, ensure_ascii=False)
     except Exception as e:
         logging.error("Error listing recent sessions: %s", e, exc_info=True)
@@ -950,6 +995,9 @@ def _session_search_impl(
     # Discovery result shaping (appended to preserve positional compatibility)
     detail: str = "adaptive",
     *,
+    offset: int = 0,
+    last_active_after=None,
+    last_active_before=None,
     _owned_dbs: Optional[List[Any]] = None,
 ) -> str:
     """Single-shape tool. Mode inferred from which args are set.
@@ -1030,7 +1078,19 @@ def _session_search_impl(
 
     # Browse shape: no query → recent sessions.
     if not query or not isinstance(query, str) or not query.strip():
-        return _list_recent_sessions(db, limit, current_session_id, link_profile=profile)
+        try:
+            offset = max(0, int(offset))
+        except (TypeError, ValueError):
+            offset = 0
+        return _list_recent_sessions(
+            db,
+            limit,
+            current_session_id,
+            link_profile=profile,
+            offset=offset,
+            last_active_after=last_active_after,
+            last_active_before=last_active_before,
+        )
 
     # Parse role_filter
     role_list: Optional[List[str]] = None
@@ -1078,6 +1138,10 @@ def session_search(
     profile: str = None,
     # Discovery result shaping (appended to preserve positional compatibility)
     detail: str = "adaptive",
+    *,
+    offset: int = 0,
+    last_active_after=None,
+    last_active_before=None,
 ) -> str:
     """Run session search and close databases opened by this invocation."""
     owned_dbs: List[Any] = []
@@ -1106,6 +1170,9 @@ def session_search(
             sort=sort,
             profile=profile,
             detail=detail,
+            offset=offset,
+            last_active_after=last_active_after,
+            last_active_before=last_active_before,
             _owned_dbs=owned_dbs,
         )
     finally:
@@ -1218,11 +1285,33 @@ SESSION_SEARCH_SCHEMA = {
             "limit": {
                 "type": "integer",
                 "description": (
-                    "Discovery shape only. Max sessions to return (default 3, max 10). "
-                    "Bump to 5–10 when the topic likely spans several sessions and you "
-                    "want to pick the right one to scroll into."
+                    "Discovery/browse shape. Max sessions to return (default 3, max 10). "
+                    "For browse, process every page when reviewing a full history."
                 ),
                 "default": 3,
+            },
+            "offset": {
+                "type": "integer",
+                "description": (
+                    "Browse shape only. Number of sessions to skip after the canonical "
+                    "user-visible filters have been applied. Use next_offset from the "
+                    "previous page; default 0."
+                ),
+                "default": 0,
+            },
+            "last_active_after": {
+                "type": ["number", "string", "null"],
+                "description": (
+                    "Browse shape only. Return sessions whose last activity is strictly "
+                    "after this Unix timestamp."
+                ),
+            },
+            "last_active_before": {
+                "type": ["number", "string", "null"],
+                "description": (
+                    "Browse shape only. Return sessions whose last activity is strictly "
+                    "before this Unix timestamp."
+                ),
             },
             "sort": {
                 "type": "string",
@@ -1307,6 +1396,9 @@ registry.register(
         query=args.get("query") or "",
         role_filter=args.get("role_filter"),
         limit=args.get("limit", 3),
+        offset=args.get("offset", 0),
+        last_active_after=args.get("last_active_after"),
+        last_active_before=args.get("last_active_before"),
         session_id=args.get("session_id"),
         around_message_id=args.get("around_message_id"),
         window=args.get("window", 5),

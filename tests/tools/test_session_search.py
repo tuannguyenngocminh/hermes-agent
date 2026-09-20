@@ -63,6 +63,20 @@ def _seed_modpack_sessions(db):
     db._conn.commit()
 
 
+def _seed_ordered_browse_sessions(db, entries):
+    """Create no-message sessions with deterministic browse timestamps."""
+    for session_id, source, timestamp, parent_session_id in entries:
+        kwargs = {"source": source}
+        if parent_session_id is not None:
+            kwargs["parent_session_id"] = parent_session_id
+        db.create_session(session_id, **kwargs)
+        db._conn.execute(
+            "UPDATE sessions SET started_at = ?, last_activity_at = ? WHERE id = ?",
+            (timestamp, timestamp, session_id),
+        )
+    db._conn.commit()
+
+
 # =========================================================================
 # Schema invariants
 # =========================================================================
@@ -73,6 +87,9 @@ class TestSchema:
         # Discovery shape
         assert "query" in params
         assert "limit" in params
+        assert "offset" in params
+        assert "last_active_after" in params
+        assert "last_active_before" in params
         assert params["sort"]["enum"] == ["newest", "oldest"]
         assert params["detail"]["enum"] == ["adaptive", "full"]
         assert params["detail"]["default"] == "adaptive"
@@ -99,7 +116,13 @@ class TestSchema:
             "sort",
             "profile",
         ]
-        assert parameters == [*historical_prefix, "detail"]
+        assert parameters == [
+            *historical_prefix,
+            "detail",
+            "offset",
+            "last_active_after",
+            "last_active_before",
+        ]
 
 
 class TestFormatTimestamp:
@@ -163,13 +186,126 @@ class TestBrowseShape:
         result = json.loads(session_search(db=db))
         assert result["success"] is True
         assert result["mode"] == "browse"
-        assert result["count"] >= 3
+        assert 0 < result["count"] <= 3
 
     def test_browse_excludes_current_session(self, db):
         _seed_modpack_sessions(db)
         result = json.loads(session_search(db=db, current_session_id="s_newest"))
         sids = [r["session_id"] for r in result["results"]]
         assert "s_newest" not in sids
+
+    def test_browse_paginates_total_and_next_offset(self, db):
+        visible_ids = [f"visible-{index:02d}" for index in range(12)]
+        _seed_ordered_browse_sessions(
+            db,
+            [
+                (session_id, "cli", 1_700_000_000 + index, None)
+                for index, session_id in enumerate(visible_ids)
+            ],
+        )
+
+        first = json.loads(session_search(db=db, limit=10, offset=0))
+        second = json.loads(session_search(db=db, limit=10, offset=10))
+
+        first_ids = {row["session_id"] for row in first["results"]}
+        second_ids = {row["session_id"] for row in second["results"]}
+        assert first["total"] == 12
+        assert first["offset"] == 0
+        assert first["has_more"] is True
+        assert first["next_offset"] == 10
+        assert second["total"] == 12
+        assert second["offset"] == 10
+        assert second["has_more"] is False
+        assert second["next_offset"] is None
+        assert first_ids.isdisjoint(second_ids)
+        assert first_ids | second_ids == set(visible_ids)
+
+    def test_browse_filters_before_offset_and_total(self, db):
+        # The current session, a hidden source, and a live delegation child
+        # sit between visible rows in raw last-active order.  Pagination must
+        # be applied only after those rows are removed from the canonical set.
+        visible_ids = [f"visible-{index:02d}" for index in range(7)]
+        entries = [
+            (visible_ids[0], "cli", 1_700_000_000, None),
+            (visible_ids[1], "cli", 1_700_000_010, None),
+            (visible_ids[2], "cli", 1_700_000_020, None),
+            (visible_ids[3], "cli", 1_700_000_030, None),
+            ("filtered-current", "cli", 1_700_000_035, None),
+            ("filtered-tool", "tool", 1_700_000_036, None),
+            ("lineage-parent", "cli", 1_700_000_037, None),
+            ("lineage-child", "cli", 1_700_000_038, "lineage-parent"),
+            (visible_ids[4], "cli", 1_700_000_040, None),
+            (visible_ids[5], "cli", 1_700_000_050, None),
+            (visible_ids[6], "cli", 1_700_000_060, None),
+        ]
+        _seed_ordered_browse_sessions(db, entries)
+
+        first = json.loads(
+            session_search(
+                db=db,
+                limit=4,
+                offset=0,
+                current_session_id="filtered-current",
+            )
+        )
+        second = json.loads(
+            session_search(
+                db=db,
+                limit=4,
+                offset=4,
+                current_session_id="filtered-current",
+            )
+        )
+
+        expected_ids = set(visible_ids) | {"lineage-parent"}
+        first_ids = [row["session_id"] for row in first["results"]]
+        second_ids = [row["session_id"] for row in second["results"]]
+        assert first["total"] == len(expected_ids)
+        assert second["total"] == len(expected_ids)
+        assert first["offset"] == 0
+        assert second["offset"] == 4
+        assert len(first_ids) == len(set(first_ids))
+        assert len(second_ids) == len(set(second_ids))
+        assert set(first_ids).isdisjoint(second_ids)
+        assert set(first_ids) | set(second_ids) == expected_ids
+        assert "filtered-current" not in expected_ids
+        assert "filtered-tool" not in expected_ids
+        assert "lineage-child" not in expected_ids
+
+    def test_browse_applies_last_active_time_scope(self, db):
+        _seed_ordered_browse_sessions(
+            db,
+            [
+                ("old-session", "cli", 1_700_000_100, None),
+                ("new-session", "cli", 1_700_000_200, None),
+                ("newest-session", "cli", 1_700_000_300, None),
+            ],
+        )
+
+        after_result = json.loads(
+            session_search(
+                db=db,
+                limit=10,
+                last_active_after=1_700_000_150,
+            )
+        )
+
+        before_result = json.loads(
+            session_search(
+                db=db,
+                limit=10,
+                last_active_before=1_700_000_250,
+            )
+        )
+
+        assert after_result["scope"]["last_active_after"] == 1_700_000_150
+        assert before_result["scope"]["last_active_before"] == 1_700_000_250
+        assert {
+            row["session_id"] for row in after_result["results"]
+        } == {"new-session", "newest-session"}
+        assert {
+            row["session_id"] for row in before_result["results"]
+        } == {"old-session", "new-session"}
 
 
 # =========================================================================
@@ -1143,4 +1279,3 @@ class TestNewResetLineageBrowse:
         result = json.loads(session_search(db=db, current_session_id="s_other"))
         sids = [r["session_id"] for r in result["results"]]
         assert "s_legacy_child" in sids
-
