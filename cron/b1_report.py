@@ -41,6 +41,7 @@ class B1ReviewTelemetry:
     listed_session_ids: set[str] = field(default_factory=set)
     read_session_ids: set[str] = field(default_factory=set)
     failed_session_ids: set[str] = field(default_factory=set)
+    read_failure_attempts: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -81,6 +82,7 @@ def record_session_search_result(
     except (TypeError, ValueError) as exc:
         telemetry.errors.append(f"session_search returned invalid JSON: {exc}")
         if requested_session_id:
+            telemetry.read_failure_attempts += 1
             telemetry.failed_session_ids.add(str(requested_session_id))
         return
 
@@ -111,6 +113,8 @@ def record_session_search_result(
         return
 
     if not success:
+        if actual_mode == "read":
+            telemetry.read_failure_attempts += 1
         session_id = requested_session_id or payload.get("session_id")
         if session_id:
             telemetry.failed_session_ids.add(str(session_id))
@@ -161,6 +165,21 @@ def _render_report(
     scope_total = max(telemetry.browse_totals) if telemetry and telemetry.browse_totals else None
     listed = len(telemetry.listed_session_ids) if telemetry else None
     read = len(telemetry.read_session_ids) if telemetry else None
+    unverified = (
+        max(scope_total - read, 0)
+        if scope_total is not None and read is not None
+        else None
+    )
+    unresolved_failed_ids = None
+    if telemetry is not None:
+        unresolved_failed_ids = telemetry.failed_session_ids - telemetry.read_session_ids
+        if telemetry.listed_session_ids:
+            unresolved_failed_ids &= telemetry.listed_session_ids
+    unresolved_failed = (
+        len(unresolved_failed_ids)
+        if unresolved_failed_ids is not None
+        else None
+    )
     mode = str((review_scope or {}).get("mode") or "unknown")
     if mode not in {"baseline", "incremental"}:
         mode = "unknown"
@@ -181,35 +200,46 @@ def _render_report(
         )
 
     lines = [
-        "# B1 Daily Review Report",
+        "# Báo cáo rà soát hằng ngày",
         "",
-        f"- Report time (UTC): `{utc_report_timestamp()}`",
+        "## Metadata",
+        "",
+        f"- Thời điểm (UTC): `{utc_report_timestamp()}`",
         f"- Job ID: `{job_id}`",
         f"- Run ID: `{run_id}`",
-        f"- Mode: `{mode}`",
+        f"- Chế độ: `{mode}`",
         f"- Coverage: `{coverage}`",
-        f"- Sessions in scope: `{_count_text(scope_total)}`",
-        f"- Sessions listed: `{_count_text(listed)}`",
-        f"- Sessions read: `{_count_text(read)}`",
-        f"- Sessions with read failure: `{_count_text(len(telemetry.failed_session_ids) if telemetry else None)}`",
-        "",
-        body,
+        f"- Số session trong phạm vi: `{_count_text(scope_total)}`",
+        f"- Số session đã liệt kê: `{_count_text(listed)}`",
+        f"- Số session đã đọc: `{_count_text(read)}`",
+        f"- Số session chưa đọc/không xác minh: `{_count_text(unverified)}`",
+        f"- Lượt đọc lỗi (đã thử lại): `{_count_text(telemetry.read_failure_attempts if telemetry else None)}`",
+        f"- Session có lỗi đọc chưa giải quyết: `{_count_text(unresolved_failed)}`",
         "",
     ]
-    if coverage == "INCOMPLETE":
-        lines[10:10] = [
+    if coverage == "COMPLETE" and unverified is not None and unverified > 0:
+        lines.extend([
+            (
+                "CẢNH BÁO: marker COMPLETE mâu thuẫn với telemetry — "
+                f"đã đọc {read}/{scope_total} session, còn {unverified} session "
+                "chưa đọc/không xác minh."
+            ),
+            "",
+        ])
+    if coverage == "INCOMPLETE" or (coverage == "COMPLETE" and unverified is not None and unverified > 0):
+        lines.extend([
             "## Phần chưa quét",
             "",
             (
-                f"Chưa đọc hoặc chưa xác minh được {max((scope_total or 0) - (read or 0), 0)} session "
-                f"trong scope; số liệu tổng thể là {_count_text(scope_total)}."
-                if scope_total is not None and read is not None
-                else "Không đủ telemetry để xác minh toàn bộ session trong scope; các số chưa biết được giữ là `unknown`."
+                f"Số session chưa đọc/không xác minh: `{_count_text(unverified)}`."
+                if unverified is not None
+                else "Không đủ telemetry để xác minh số session chưa đọc/không xác minh; giữ là `unknown`."
             ),
             "",
-        ]
+        ])
         if telemetry and telemetry.errors:
-            lines[14:14] = ["Chi tiết lỗi: " + "; ".join(telemetry.errors), ""]
+            lines.extend(["Chi tiết lỗi: " + "; ".join(telemetry.errors), ""])
+    lines.extend([body, ""])
 
     rendered = "\n".join(lines)
     for token in (

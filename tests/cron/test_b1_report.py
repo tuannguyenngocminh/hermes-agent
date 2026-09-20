@@ -54,14 +54,16 @@ def test_report_writer_uses_profile_report_type_directory_and_metadata(tmp_path)
     assert path == tmp_path / "reports" / "b1-review" / path.name
     assert path.suffix == ".md"
     text = path.read_text(encoding="utf-8")
-    assert "# B1 Daily Review Report" in text
+    assert "# Báo cáo rà soát hằng ngày" in text
+    assert "## Metadata" in text
     assert "Job ID: `daily-review-job`" in text
     assert "Run ID: `run-1`" in text
-    assert "Mode: `baseline`" in text
+    assert "Chế độ: `baseline`" in text
     assert "Coverage: `COMPLETE`" in text
-    assert "Sessions in scope: `47`" in text
-    assert "Sessions listed: `2`" in text
-    assert "Sessions read: `1`" in text
+    assert "Số session trong phạm vi: `47`" in text
+    assert "Số session đã liệt kê: `2`" in text
+    assert "Số session đã đọc: `1`" in text
+    assert "Số session chưa đọc/không xác minh: `46`" in text
     assert "Everything is covered." in text
 
 
@@ -154,9 +156,9 @@ def test_unknown_telemetry_is_explicit_not_inferred(tmp_path):
     )
     text = path.read_text(encoding="utf-8")
     assert "Coverage: `INCOMPLETE`" in text
-    assert "Sessions in scope: `unknown`" in text
-    assert "Sessions listed: `unknown`" in text
-    assert "Sessions read: `unknown`" in text
+    assert "Số session trong phạm vi: `unknown`" in text
+    assert "Số session đã liệt kê: `unknown`" in text
+    assert "Số session đã đọc: `unknown`" in text
     assert "## Phần chưa quét" in text
 
 
@@ -183,8 +185,55 @@ def test_session_search_telemetry_records_browse_read_and_error_without_changing
     assert telemetry.listed_session_ids == {"s-1", "s-2"}
     assert telemetry.read_session_ids == {"s-1"}
     assert telemetry.failed_session_ids == {"s-3"}
+    assert telemetry.read_failure_attempts == 1
     assert telemetry.errors
     assert json.loads(browse)["results"][0]["session_id"] == "s-1"
+
+
+def test_failed_read_retried_success_is_not_unresolved_and_out_of_scope_is_excluded(tmp_path):
+    with b1_report.capture_b1_review("job", "run", {"mode": "baseline"}) as telemetry:
+        telemetry.listed_session_ids.update({"s-1", "s-2"})
+        telemetry.browse_totals.append(2)
+        b1_report.record_session_search_result(
+            mode="read", requested_session_id="s-1",
+            result_text=json.dumps({"success": False, "mode": "read", "error": "timeout"}),
+        )
+        b1_report.record_session_search_result(
+            mode="read", requested_session_id="s-1",
+            result_text=json.dumps({"success": True, "mode": "read", "session_id": "s-1"}),
+        )
+        b1_report.record_session_search_result(
+            mode="read", requested_session_id="outside-scope",
+            result_text=json.dumps({"success": False, "mode": "read", "error": "missing"}),
+        )
+    path = _save(
+        tmp_path,
+        raw_output=f"{COMPLETE}\nbody",
+        final_response="body",
+        telemetry=telemetry,
+    )
+    text = path.read_text(encoding="utf-8")
+    assert "Số session chưa đọc/không xác minh: `1`" in text
+    assert "Lượt đọc lỗi (đã thử lại): `2`" in text
+    assert "Session có lỗi đọc chưa giải quyết: `0`" in text
+
+
+def test_complete_marker_with_incomplete_telemetry_emits_warning(tmp_path):
+    telemetry = b1_report.B1ReviewTelemetry()
+    telemetry.browse_totals.append(3)
+    telemetry.listed_session_ids.update({"s-1", "s-2", "s-3"})
+    telemetry.read_session_ids.add("s-1")
+    path = _save(
+        tmp_path,
+        raw_output=f"{COMPLETE}\nbody",
+        final_response="body",
+        telemetry=telemetry,
+    )
+    text = path.read_text(encoding="utf-8")
+    assert "CẢNH BÁO" in text
+    assert "marker COMPLETE" in text
+    assert "Số session chưa đọc/không xác minh: `2`" in text
+    assert "## Phần chưa quét" in text
 
 
 def test_public_session_search_seam_records_actual_browse_and_read(tmp_path):
