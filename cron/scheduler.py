@@ -456,6 +456,7 @@ from cron.jobs import (
     heartbeat_fire_claim,
     heartbeat_run_claim,
     mark_job_run,
+    get_cron_output_dir,
     save_job_output,
     use_cron_store,
 )
@@ -465,6 +466,150 @@ from cron.executions import create_execution, finish_execution, mark_execution_r
 # response with this marker to suppress delivery.  Output is still saved
 # locally for audit.
 SILENT_MARKER = "[SILENT]"
+
+# BP-91: the daily review job is the only cron job that receives history
+# coverage state. Keep these strings stable because the saved output is the
+# persisted hand-off between runs and is intentionally human-auditable.
+B1_REVIEW_PROMPT = "/sieu-tro-ly-ra-soat-hang-ngay"
+B1_REVIEW_COVERAGE_COMPLETE = "B1_REVIEW_COVERAGE_COMPLETE"
+B1_REVIEW_COVERAGE_INCOMPLETE = "B1_REVIEW_COVERAGE_INCOMPLETE"
+_B1_REVIEW_LOOKBACK_SECONDS = 7 * 86400
+
+
+def _is_b1_review_job(job: dict) -> bool:
+    """Return True only for the exact Siêu trợ lý daily-review prompt."""
+    return str(job.get("prompt") or "").strip() == B1_REVIEW_PROMPT
+
+
+def _unix_timestamp(value) -> Optional[int]:
+    """Convert a persisted ISO/Unix timestamp to an integer Unix timestamp."""
+    if value is None:
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        pass
+    try:
+        text = str(value).strip().replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.timestamp())
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _build_b1_review_scope(job: dict, *, previous_marker: Optional[str]) -> dict:
+    """Build the immutable baseline/incremental scope from prior-run state."""
+    previous_at = job.get("last_run_at")
+    previous_status = str(job.get("last_status") or "")
+    previous_unix = _unix_timestamp(previous_at)
+    incremental = (
+        _is_b1_review_job(job)
+        and previous_status == "ok"
+        and previous_unix is not None
+        and previous_marker == B1_REVIEW_COVERAGE_COMPLETE
+    )
+    lower_bound = (
+        previous_unix - _B1_REVIEW_LOOKBACK_SECONDS
+        if incremental else None
+    )
+    return {
+        "mode": "incremental" if incremental else "baseline",
+        "previous_success_at": str(previous_at) if incremental else "none",
+        "last_active_after": lower_bound if lower_bound is not None else "none",
+        "lookback_days": 7,
+        "profile_scope": "current cron profile only",
+        "coverage_rule": "do not return [SILENT] until all pages in scope are processed",
+    }
+
+
+def _first_nonempty_line(text: str) -> Optional[str]:
+    for line in str(text or "").splitlines():
+        if line.strip():
+            return line.strip()
+    return None
+
+
+def _split_b1_coverage_marker(text: str) -> tuple[Optional[str], str]:
+    """Extract a valid first-line coverage marker for delivery/save handling."""
+    lines = str(text or "").splitlines()
+    first_index = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first_index is None:
+        return None, str(text or "")
+    marker = lines[first_index].strip()
+    if marker not in {
+        B1_REVIEW_COVERAGE_COMPLETE,
+        B1_REVIEW_COVERAGE_INCOMPLETE,
+    }:
+        return None, str(text or "")
+    body = "\n".join(lines[:first_index] + lines[first_index + 1:]).strip()
+    return marker, body
+
+
+def _normalize_b1_response(job: dict, text: str) -> tuple[Optional[str], str]:
+    """Strip a valid internal marker and enforce honest incomplete delivery."""
+    if not _is_b1_review_job(job):
+        return None, text
+    marker, body = _split_b1_coverage_marker(text)
+    if marker is not None:
+        text = body
+    if marker != B1_REVIEW_COVERAGE_COMPLETE and (
+        not text.strip() or _is_cron_silence_response(text)
+    ):
+        text = (
+            "Daily review coverage is incomplete or unverified; "
+            "the review was not suppressed."
+        )
+    elif marker == B1_REVIEW_COVERAGE_COMPLETE and not text.strip():
+        text = SILENT_MARKER
+    return marker, text
+
+
+def _read_latest_b1_coverage_marker(job_id: str) -> Optional[str]:
+    """Read the valid first-line marker from the latest saved B1 output."""
+    try:
+        output_dir = get_cron_output_dir() / str(job_id)
+        files = sorted(
+            (path for path in output_dir.glob("*.md") if path.is_file()),
+            key=lambda path: path.name,
+            reverse=True,
+        )
+    except (OSError, ValueError, TypeError):
+        return None
+    for path in files:
+        try:
+            marker = _first_nonempty_line(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError):
+            continue
+        if marker in {
+            B1_REVIEW_COVERAGE_COMPLETE,
+            B1_REVIEW_COVERAGE_INCOMPLETE,
+        }:
+            return marker
+        return None
+    return None
+
+
+def _capture_b1_review_scope(job: dict, *, previous_marker: Optional[str] = None) -> Optional[dict]:
+    """Snapshot prior B1 state before claim_dispatch can run."""
+    if not _is_b1_review_job(job):
+        return None
+    if previous_marker is None:
+        previous_marker = _read_latest_b1_coverage_marker(job.get("id", ""))
+    return _build_b1_review_scope(job, previous_marker=previous_marker)
+
+
+def _render_b1_review_scope(scope: dict) -> str:
+    return "\n".join([
+        "## Review scope (system-generated)",
+        f"mode: {scope['mode']}",
+        f"previous_success_at: {scope['previous_success_at']}",
+        f"last_active_after: {scope['last_active_after']}",
+        f"lookback_days: {scope['lookback_days']}",
+        f"profile_scope: {scope['profile_scope']}",
+        f"coverage_rule: {scope['coverage_rule']}",
+    ])
 
 # Canonical silence tokens recognized in cron output.  Cron's contract is
 # intentionally looser than the gateway's exact-whole-response rule: the cron
@@ -3378,6 +3523,7 @@ def _build_job_prompt(
     job: dict,
     prerun_script: Optional[tuple] = None,
     extra_prompt: Optional[str] = None,
+    review_scope: Optional[dict] = None,
 ) -> str:
     """Build the effective prompt for a cron job, optionally loading one or more skills first.
 
@@ -3392,10 +3538,15 @@ def _build_job_prompt(
             #57331 — salvaged from #57342 by @liuhao1024). Appended to the
             stored prompt under a ``## Run Context`` header for this single
             fire only — never persisted to the job definition.
+        review_scope: Immutable BP-91 baseline/incremental state captured
+            before the current dispatch claim. Applied only to the exact B1
+            daily-review prompt.
     """
     user_prompt = str(job.get("prompt") or "")
     if extra_prompt:
         user_prompt = f"{user_prompt}\n\n## Run Context\n{extra_prompt}"
+    if review_scope is not None and _is_b1_review_job(job):
+        user_prompt = f"{_render_b1_review_scope(review_scope)}\n\n{user_prompt}"
     prompt = user_prompt
     skills = job.get("skills")
     # True when runtime-collected DATA (script stdout, upstream-job output)
@@ -4175,6 +4326,7 @@ def run_job(
     *,
     defer_agent_teardown: Optional[list] = None,
     extra_prompt: Optional[str] = None,
+    review_scope: Optional[dict] = None,
     cancel_event: Optional[_CancelEventLike] = None,
 ) -> tuple[bool, str, str, Optional[str]]:
     """
@@ -4193,6 +4345,9 @@ def run_job(
     ``extra_prompt``: optional per-run context from ``cronjob(action='run',
     prompt=...)`` (#57331). Appended to the stored prompt for this fire only —
     never persisted to the job definition.
+
+    ``review_scope``: immutable BP-91 scope captured before the current
+    dispatch claim. It is injected only for the exact daily-review job.
 
     Returns:
         Tuple of (success, full_output_doc, final_response, error_message)
@@ -4485,7 +4640,10 @@ def run_job(
 
     try:
         prompt = _build_job_prompt(
-            job, prerun_script=prerun_script, extra_prompt=extra_prompt
+            job,
+            prerun_script=prerun_script,
+            extra_prompt=extra_prompt,
+            review_scope=review_scope,
         )
     except CronPromptInjectionBlocked as block_exc:
         # Assembled prompt (user prompt + loaded skill content) tripped the
@@ -5390,6 +5548,9 @@ def run_job(
                     turn_exit_reason,
                 )
                 final_response = ""
+        coverage_marker, final_response = _normalize_b1_response(
+            job, final_response
+        )
         # Use a separate variable for log display; keep final_response clean
         # for delivery logic (empty response = no delivery).
         logged_response = final_response if final_response else "(No response generated)"
@@ -5408,6 +5569,8 @@ def run_job(
 
 {logged_response}
 """
+        if coverage_marker is not None:
+            output = f"{coverage_marker}\n{output}"
         
         logger.info("Job '%s' completed successfully", job_name)
 
@@ -5829,6 +5992,10 @@ def _run_one_job_body(
         execution_id = create_execution(job["id"], source="direct")["id"]
     delivery_attempted = False
     delivery_error = None
+    # Snapshot B1 state before claim_dispatch. The dispatch claim may persist
+    # other job mutations in jobs.json; prompt construction must always use
+    # the previous completed run, never a value written by this dispatch.
+    review_scope = _capture_b1_review_scope(job)
     try:
         # Pre-run dispatch claim (issue #38758): atomically commit a finite
         # one-shot's dispatch BEFORE its side effect runs, so a tick that dies
@@ -5883,12 +6050,14 @@ def _run_one_job_body(
                     job,
                     defer_agent_teardown=_deferred_agents,
                     extra_prompt=extra_prompt,
+                    review_scope=review_scope,
                 )
             else:
                 success, output, final_response, error = run_job(
                     job,
                     defer_agent_teardown=_deferred_agents,
                     extra_prompt=extra_prompt,
+                    review_scope=review_scope,
                     cancel_event=fire_claim_lost,
                 )
         except BaseException:

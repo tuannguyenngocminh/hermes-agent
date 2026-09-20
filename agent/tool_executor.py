@@ -1981,6 +1981,9 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     window=next_args.get("window", 5),
                     sort=next_args.get("sort"),
                     detail=next_args.get("detail", "adaptive"),
+                    offset=next_args.get("offset", 0),
+                    last_active_after=next_args.get("last_active_after"),
+                    last_active_before=next_args.get("last_active_before"),
                     db=session_db,
                     current_session_id=agent.session_id,
                 )
