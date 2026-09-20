@@ -480,6 +480,7 @@ export function toRuntimeMessage(message: ChatMessage): ThreadMessage {
       steps: [],
       // Carries ChatMessage.interim to AssistantMessage's footer gate.
       custom: {
+        ...(message.errorCode ? { errorCode: message.errorCode } : {}),
         ...(message.interim ? { interim: true } : {}),
         ...timelineMeta,
         ...(message.completedAt !== undefined ? { timelineCompletedAt: message.completedAt } : {}),

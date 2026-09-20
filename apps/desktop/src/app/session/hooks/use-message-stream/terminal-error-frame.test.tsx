@@ -116,4 +116,23 @@ describe('terminal error message.complete frames', () => {
     const bubble = lastAssistant()
     expect(bubble?.error).toBe('Error: something broke')
   })
+
+  it('maps Kilo exhaustion to the localized recovery surface without raw diagnostics', async () => {
+    await mountStream()
+    await start()
+    await delta('partial answer')
+
+    await completeWithError({
+      error: 'HTTP 429 model=kilocode raw provider payload',
+      failure_reason: 'kilo_fallback_exhausted',
+      partial: true,
+      text: 'partial answer'
+    })
+
+    const bubble = lastAssistant()
+    expect(bubble?.error).toBe('Lượt dùng thử miễn phí hôm nay đã hết.')
+    expect(bubble?.errorCode).toBe('kilo_fallback_exhausted')
+    expect(bubble?.error).not.toMatch(/HTTP|model|kilocode|provider|payload/i)
+    expect(chatMessageText(bubble!)).toBe('partial answer')
+  })
 })

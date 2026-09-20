@@ -54,6 +54,11 @@ _PROVIDER_STREAM_ERROR_FINISH_REASONS = {"error", "error_finish"}
 _PROVIDER_STREAM_SSE_FIELDS = {"event", "data", "id", "retry"}
 _PROVIDER_STREAM_ERROR_TEXT_LIMIT = 4096
 
+# Structured terminal reason consumed by the desktop. Keep this independent
+# from provider error text: the raw diagnostic remains available to backend
+# logs, while the UI can render a stable, localized recovery surface.
+KILO_FALLBACK_EXHAUSTED_FAILURE_REASON = "kilo_fallback_exhausted"
+
 # When the fallback chain is fully exhausted on a non-rate-limit failure
 # (e.g. every provider returns a non-retryable client error like HTTP 400),
 # arm a short cooldown so the NEXT turn's restore_primary_runtime stays gated
@@ -2423,6 +2428,24 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
                 backoff_count, backoff_seconds, backoff_seconds / 60, backoff_count + 1,
             )
     if agent._fallback_index >= len(agent._fallback_chain):
+        primary_runtime = getattr(agent, "_primary_runtime", None) or {}
+        primary_provider = str(
+            primary_runtime.get("provider") or getattr(agent, "provider", "") or ""
+        ).strip().lower()
+        fallback_chain = getattr(agent, "_fallback_chain", None) or []
+        if (
+            primary_provider == "kilocode"
+            and fallback_chain
+            and all(
+                isinstance(entry, dict)
+                and str(entry.get("provider") or "").strip().lower() == "kilocode"
+                for entry in fallback_chain
+            )
+        ):
+            # Set only after the current turn has walked the entire configured
+            # chain. The finalizer transfers it to the structured result and
+            # clears it before the next turn.
+            agent._kilo_fallback_exhausted = True
         # Chain exhausted.  If we actually walked a non-empty chain and the
         # failure was NOT a rate-limit/billing event (those already armed
         # their own 60s cooldown above), arm a short cooldown so the next

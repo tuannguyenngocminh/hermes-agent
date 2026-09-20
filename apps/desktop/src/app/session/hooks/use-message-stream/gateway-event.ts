@@ -18,6 +18,10 @@ import {
   UNSCOPED_STREAM_EVENT_TYPES
 } from '@/lib/gateway-events'
 import { triggerHaptic } from '@/lib/haptics'
+import {
+  KILO_FALLBACK_EXHAUSTED_FAILURE_REASON,
+  kiloFallbackCopyForFailureReason
+} from '@/lib/kilo-fallback'
 import { modelOptionsQueryKey } from '@/lib/model-options'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { invalidateSlashCompletions } from '@/lib/slash-completion-cache'
@@ -228,7 +232,7 @@ interface GatewayEventDeps {
     failure?: { error: string; partial: boolean },
     occurredAt?: number
   ) => void
-  failAssistantMessage: (sessionId: string, errorMessage: string, occurredAt?: number) => void
+  failAssistantMessage: (sessionId: string, errorMessage: string, occurredAt?: number, errorCode?: string) => void
   flushQueuedDeltas: (sessionId?: string) => void
   finalizeInterimAssistantMessage: (sessionId: string, text: string, occurredAt?: number) => void
   hydrateFromStoredSession: (
@@ -934,11 +938,15 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
         // Terminal error frames (status "error") carry the failure in
         // structured fields: `error` is the message, and `partial` marks
         // `text` as streamed output to keep rather than the error string.
+
+        const kiloCopy = kiloFallbackCopyForFailureReason(payload?.failure_reason)
+
         const failure =
           payload?.status === 'error'
             ? {
-                error: coerceGatewayText(payload.error).trim() || finalText || 'Hermes reported an error',
-                partial: Boolean(payload.partial)
+                error: kiloCopy?.title ?? (coerceGatewayText(payload.error).trim() || finalText || 'Hermes reported an error'),
+                partial: Boolean(payload.partial),
+                code: kiloCopy ? KILO_FALLBACK_EXHAUSTED_FAILURE_REASON : undefined
               }
             : undefined
 
@@ -1469,6 +1477,8 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
         clearAgentNotice((event.payload as AgentNoticePayload | undefined)?.key)
       } else if (event.type === 'error') {
         const errorMessage = payload?.message || 'Hermes reported an error'
+        const kiloCopy = kiloFallbackCopyForFailureReason(payload?.failure_reason)
+        const userFacingError = kiloCopy?.title ?? errorMessage
         const looksLikeProviderSetup = isProviderSetupErrorMessage(errorMessage)
 
         // A turn that errors out has also ended — drop any open blocking prompt
@@ -1487,14 +1497,19 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
           flashPetActivity({ error: true })
         }
 
-        dispatchNativeNotification({
-          body: errorMessage,
-          kind: 'turnError',
-          sessionId,
-          title: translateNow('notifications.native.turnErrorTitle')
-        })
+        if (!kiloCopy) {
+          dispatchNativeNotification({
+            body: errorMessage,
+            kind: 'turnError',
+            sessionId,
+            title: translateNow('notifications.native.turnErrorTitle')
+          })
+        }
 
-        if (looksLikeProviderSetup) {
+        if (kiloCopy) {
+          // The assistant bubble is the single recovery surface; do not
+          // duplicate it as a toast or native notification.
+        } else if (looksLikeProviderSetup) {
           requestDesktopOnboarding(errorMessage)
         } else if (isDiskFullErrorMessage(errorMessage)) {
           notifyError(new Error(errorMessage), translateNow('notifications.errors.diskFull'))
@@ -1507,13 +1522,13 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
             id: `gateway-error:${errorMessage}`,
             kind: 'error',
             title: 'Hermes error',
-            message: errorMessage
+            message: userFacingError
           })
         }
 
         if (sessionId) {
           flushQueuedDeltas(sessionId)
-          failAssistantMessage(sessionId, errorMessage, occurredAt)
+          failAssistantMessage(sessionId, userFacingError, occurredAt, kiloCopy ? KILO_FALLBACK_EXHAUSTED_FAILURE_REASON : undefined)
         }
 
         if (isActiveEvent) {

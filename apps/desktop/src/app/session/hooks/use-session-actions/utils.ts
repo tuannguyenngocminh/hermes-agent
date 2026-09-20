@@ -144,6 +144,7 @@ const COMPARED_FIELDS = [
   'role',
   'pending',
   'error',
+  'errorCode',
   'hidden',
   'branchGroupId',
   'interim',
@@ -720,6 +721,7 @@ export function appendLiveSessionProjection(messages: ChatMessage[], projection:
   // reintroduce the hidden scaffold as a visible user bubble.
   const inflightUser =
     projection.inflight?.display_kind === 'hidden' ? '' : projection.inflight?.user?.trim() ?? ''
+
   const inflightAssistant = projection.inflight?.assistant ?? ''
   const inflightStreaming = Boolean(projection.inflight?.streaming)
 

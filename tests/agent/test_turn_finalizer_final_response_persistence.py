@@ -130,6 +130,31 @@ def test_final_response_closes_tool_tail_before_persistence(monkeypatch):
     assert agent.persisted_messages[-1] == result["messages"][-1]
 
 
+def test_kilo_fallback_exhaustion_is_transferred_to_structured_result(monkeypatch):
+    monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda *_a, **_kw: [])
+    agent = FakeAgent()
+    agent._kilo_fallback_exhausted = True
+
+    result = finalize_turn(
+        agent,
+        final_response="",
+        api_call_count=1,
+        interrupted=False,
+        failed=True,
+        messages=[{"role": "user", "content": "continue"}],
+        conversation_history=[],
+        effective_task_id="task",
+        turn_id="turn",
+        user_message="continue",
+        original_user_message="continue",
+        _should_review_memory=False,
+        _turn_exit_reason="fallback_exhausted",
+    )
+
+    assert result["failure_reason"] == "kilo_fallback_exhausted"
+    assert agent._kilo_fallback_exhausted is False
+
+
 def test_fallback_timestamp_survives_delayed_sqlite_persistence(
     monkeypatch, tmp_path
 ):

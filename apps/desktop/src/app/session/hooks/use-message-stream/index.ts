@@ -561,7 +561,7 @@ export function useMessageStream({
       sessionId: string,
       text: string,
       responsePreviewed?: boolean,
-      failure?: { error: string; partial: boolean },
+      failure?: { error: string; partial: boolean; code?: string },
       occurredAt = Date.now() / 1000
     ) => {
       let shouldHydrate = false
@@ -616,7 +616,8 @@ export function useMessageStream({
             parts: completeOpenTimelineParts(message.parts, occurredAt),
             pending: false,
             interim: false,
-            ...(durationS !== undefined ? { durationS } : {})
+            ...(durationS !== undefined ? { durationS } : {}),
+            ...(failure?.code ? { errorCode: failure.code } : {})
           }
 
           if (completionError && !keepFailedPartialText) {
@@ -641,7 +642,8 @@ export function useMessageStream({
           completedAt: occurredAt,
           branchGroupId: state.pendingBranchGroup ?? undefined,
           ...(durationS !== undefined ? { durationS } : {}),
-          ...(completionError && { error: completionError })
+          ...(completionError && { error: completionError }),
+          ...(failure?.code ? { errorCode: failure.code } : {})
         })
 
         const prev = state.messages
@@ -780,7 +782,7 @@ export function useMessageStream({
   )
 
   const failAssistantMessage = useCallback(
-    (sessionId: string, errorMessage: string, occurredAt = Date.now() / 1000) => {
+    (sessionId: string, errorMessage: string, occurredAt = Date.now() / 1000, errorCode?: string) => {
       updateSessionState(sessionId, state => {
         const streamId = state.streamId ?? `assistant-error-${Date.now()}`
         const groupId = state.pendingBranchGroup ?? undefined
@@ -798,6 +800,7 @@ export function useMessageStream({
                     ...message,
                     completedAt: occurredAt,
                     error,
+                    ...(errorCode ? { errorCode } : {}),
                     parts: completeOpenTimelineParts(message.parts, occurredAt),
                     pending: false,
                     ...(durationS !== undefined ? { durationS } : {})
@@ -813,6 +816,7 @@ export function useMessageStream({
                 timestamp: occurredAt,
                 completedAt: occurredAt,
                 error,
+                ...(errorCode ? { errorCode } : {}),
                 pending: false,
                 branchGroupId: groupId,
                 ...(durationS !== undefined ? { durationS } : {})

@@ -696,6 +696,11 @@ def finalize_turn(
         ).get("service_tier"),
         "session_id": agent.session_id,
     }
+    if getattr(agent, "_kilo_fallback_exhausted", False):
+        from agent.chat_completion_helpers import KILO_FALLBACK_EXHAUSTED_FAILURE_REASON
+
+        result["failure_reason"] = KILO_FALLBACK_EXHAUSTED_FAILURE_REASON
+        agent._kilo_fallback_exhausted = False
     if agent._tool_guardrail_halt_decision is not None:
         result["guardrail"] = agent._tool_guardrail_halt_decision.to_metadata()
     # Persistence failures already set failed=True + an explanation in

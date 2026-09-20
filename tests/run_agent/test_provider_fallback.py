@@ -73,6 +73,82 @@ class TestFallbackChainAdvancement:
         agent = _make_agent(fallback_model=None)
         assert agent._try_activate_fallback() is False
 
+    def test_marks_kilo_chain_exhaustion_after_all_candidates_were_tried(self):
+        fallback_models = [f"kilo-model-{index}" for index in range(1, 6)]
+        agent = _make_agent(
+            fallback_model=[{"provider": "kilocode", "model": model} for model in fallback_models]
+        )
+        agent.provider = "kilocode"
+        agent.model = "kilo-model-0"
+        agent._primary_runtime = {"provider": "kilocode", "model": "kilo-model-0"}
+        calls = []
+
+        def resolve(provider, model=None, **_kwargs):
+            calls.append((provider, model))
+            return _mock_client(base_url="https://kilo.example/v1"), model
+
+        with patch("agent.auxiliary_client.resolve_provider_client", side_effect=resolve):
+            for expected_model in fallback_models:
+                assert agent._try_activate_fallback() is True
+                assert agent.model == expected_model
+
+            assert agent._try_activate_fallback() is False
+
+        assert ["kilo-model-0", *[model for _, model in calls]] == [
+            "kilo-model-0",
+            *fallback_models,
+        ]
+        assert getattr(agent, "_kilo_fallback_exhausted", False) is True
+
+    def test_marks_kilo_chain_exhaustion_even_when_chain_is_not_six_entries(self):
+        agent = _make_agent(fallback_model=[{"provider": "kilocode", "model": "only-fallback"}])
+        agent.provider = "kilocode"
+        agent.model = "primary"
+        agent._primary_runtime = {"provider": "kilocode", "model": "primary"}
+
+        with patch(
+            "agent.auxiliary_client.resolve_provider_client",
+            return_value=(_mock_client(base_url="https://kilo.example/v1"), "only-fallback"),
+        ):
+            assert agent._try_activate_fallback() is True
+            assert agent._try_activate_fallback() is False
+
+        assert getattr(agent, "_kilo_fallback_exhausted", False) is True
+
+    def test_does_not_mark_non_kilo_chain_exhaustion(self):
+        agent = _make_agent(fallback_model=[{"provider": "openai", "model": "gpt-5"}])
+        agent.provider = "kilocode"
+        agent.model = "primary"
+        agent._primary_runtime = {"provider": "kilocode", "model": "primary"}
+
+        with patch(
+            "agent.auxiliary_client.resolve_provider_client",
+            return_value=(_mock_client(), "gpt-5"),
+        ):
+            assert agent._try_activate_fallback() is True
+            assert agent._try_activate_fallback() is False
+
+        assert getattr(agent, "_kilo_fallback_exhausted", False) is False
+
+    def test_partial_kilo_fallback_success_does_not_mark_exhaustion(self):
+        agent = _make_agent(
+            fallback_model=[
+                {"provider": "kilocode", "model": "kilo-model-1"},
+                {"provider": "kilocode", "model": "kilo-model-2"},
+            ]
+        )
+        agent.provider = "kilocode"
+        agent.model = "primary"
+        agent._primary_runtime = {"provider": "kilocode", "model": "primary"}
+
+        with patch(
+            "agent.auxiliary_client.resolve_provider_client",
+            return_value=(_mock_client(base_url="https://kilo.example/v1"), "kilo-model-1"),
+        ):
+            assert agent._try_activate_fallback() is True
+
+        assert getattr(agent, "_kilo_fallback_exhausted", False) is False
+
     def test_advances_index(self):
         fbs = [
             {"provider": "openai", "model": "gpt-4o"},

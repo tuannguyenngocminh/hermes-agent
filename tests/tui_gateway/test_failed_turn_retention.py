@@ -171,6 +171,27 @@ def test_returned_error_result_retains_snapshot_and_emits_terminal_frame(
     assert session["running"] is False
 
 
+def test_returned_kilo_exhaustion_forwards_only_the_structured_reason(emits, turn_env):
+    agent = types.SimpleNamespace(
+        session_id="session-key",
+        run_conversation=lambda *a, **k: {
+            "final_response": "",
+            "error": "HTTP 429 model=kilocode raw provider payload",
+            "failure_reason": "kilo_fallback_exhausted",
+            "failed": True,
+        },
+        clear_interrupt=lambda: None,
+    )
+    session = _session(agent=agent, running=True)
+    server._start_inflight_turn(session, "continue")
+
+    server._run_prompt_submit("rid", "sid", session, "continue")
+
+    payload = _events(emits, "message.complete")[0]
+    assert payload["failure_reason"] == "kilo_fallback_exhausted"
+    assert payload["error"] == "HTTP 429 model=kilocode raw provider payload"
+
+
 def test_completed_turn_still_clears_inflight(emits, turn_env):
     agent = types.SimpleNamespace(
         session_id="session-key",

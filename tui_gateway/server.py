@@ -10867,6 +10867,9 @@ def _run_prompt_submit(
                 status = "complete"
 
             payload = {"text": raw, "usage": _get_usage(agent), "status": status}
+            _failure_reason = result.get("failure_reason") if isinstance(result, dict) else None
+            if _failure_reason:
+                payload["failure_reason"] = _failure_reason
             if last_reasoning:
                 payload["reasoning"] = last_reasoning
             if status_note:

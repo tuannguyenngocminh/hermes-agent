@@ -27,18 +27,52 @@ import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { Codicon } from '@/components/ui/codicon'
 import { CopyButton } from '@/components/ui/copy-button'
 import { useI18n } from '@/i18n'
+import { openExternalLink } from '@/lib/external-link'
 import { triggerHaptic } from '@/lib/haptics'
 import { AudioLines, GitForkIcon, Loader2Icon, RefreshCwIcon, SmilePlusIcon, VolumeXIcon, XIcon } from '@/lib/icons'
+import { KILO_FALLBACK_EXHAUSTED_COPY } from '@/lib/kilo-fallback'
 import { extractPreviewTargets } from '@/lib/preview-targets'
 import { useEnterAnimation } from '@/lib/use-enter-animation'
 import { cn } from '@/lib/utils'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
 import { notifyError } from '@/store/notifications'
+import { startManualOnboarding, startManualProviderOAuth } from '@/store/onboarding'
 import { $voicePlayback } from '@/store/voice-playback'
 
 // Stable empty identity for the settled-parts selector — a fresh [] per render
 // would re-derive the changed-files card on every message re-render.
 const EMPTY_PARTS: readonly unknown[] = []
+
+function KiloFallbackErrorCard() {
+  return (
+    <div
+      className="mt-1.5 flex max-w-[min(100%,34rem)] flex-col gap-2 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-surface-secondary) p-3 text-sm text-foreground"
+      role="alert"
+    >
+      <p className="font-medium">{KILO_FALLBACK_EXHAUSTED_COPY.title}</p>
+      <p className="text-muted-foreground">{KILO_FALLBACK_EXHAUSTED_COPY.body}</p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => startManualProviderOAuth('openai-codex', KILO_FALLBACK_EXHAUSTED_COPY.chatGptReason)}
+          type="button"
+        >
+          {KILO_FALLBACK_EXHAUSTED_COPY.chatGptAction}
+        </button>
+        <button
+          className="rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => {
+            openExternalLink('https://aistudio.google.com/app/apikey')
+            startManualOnboarding(KILO_FALLBACK_EXHAUSTED_COPY.geminiReason)
+          }}
+          type="button"
+        >
+          {KILO_FALLBACK_EXHAUSTED_COPY.geminiAction}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 interface MessageActionProps {
   messageId: string
@@ -98,6 +132,8 @@ export const AssistantMessage: FC<{
   // 30 Hz delta stream only re-renders the markdown part and the tiny
   // StreamStallIndicator leaf — not the footer/preview/root subtree.
   const messageStatus = useAuiState(s => s.message.status?.type)
+  const errorCode = useAuiState(s => s.message.metadata?.custom?.errorCode)
+  const isKiloFallbackExhausted = errorCode === 'kilo_fallback_exhausted'
   const isRunning = messageStatus === 'running'
   const isPlaceholder = useAuiState(s => s.message.status?.type === 'running' && s.message.content.length === 0)
   const hasVisibleText = useAuiState(s => contentHasVisibleText(s.message.content))
@@ -208,22 +244,26 @@ export const AssistantMessage: FC<{
           </div>
         )}
         <MessagePrimitive.Error>
-          <ErrorPrimitive.Root
-            className="mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
-            role="alert"
-          >
-            <ErrorPrimitive.Message className="min-w-0 flex-1" />
-            {onDismissError && (
-              <TooltipIconButton
-                className="-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100"
-                onClick={() => onDismissError(messageId)}
-                side="top"
-                tooltip={t.assistant.thread.dismissError}
-              >
-                <XIcon className="size-3.5" />
-              </TooltipIconButton>
-            )}
-          </ErrorPrimitive.Root>
+          {isKiloFallbackExhausted ? (
+            <KiloFallbackErrorCard />
+          ) : (
+            <ErrorPrimitive.Root
+              className="mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
+              role="alert"
+            >
+              <ErrorPrimitive.Message className="min-w-0 flex-1" />
+              {onDismissError && (
+                <TooltipIconButton
+                  className="-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100"
+                  onClick={() => onDismissError(messageId)}
+                  side="top"
+                  tooltip={t.assistant.thread.dismissError}
+                >
+                  <XIcon className="size-3.5" />
+                </TooltipIconButton>
+              )}
+            </ErrorPrimitive.Root>
+          )}
         </MessagePrimitive.Error>
       </div>
       <MessageTimelineTimestamp className="px-(--message-text-indent) pt-0.5" suppressIfDuplicatePart />

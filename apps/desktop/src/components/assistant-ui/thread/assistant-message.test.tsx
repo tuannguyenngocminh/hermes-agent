@@ -5,10 +5,19 @@
 // AssistantMessage's action bar hide the button entirely when no handler is
 // supplied, matching how onDismissError/onRestoreToMessage already behave.
 import { AssistantRuntimeProvider, type ThreadMessage, useExternalStoreRuntime } from '@assistant-ui/react'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { $displayTimestamps } from '@/store/display-timestamps'
+
+const { startManualProviderOAuth, startManualOnboarding, openExternalLink } = vi.hoisted(() => ({
+  startManualProviderOAuth: vi.fn(),
+  startManualOnboarding: vi.fn(),
+  openExternalLink: vi.fn()
+}))
+
+vi.mock('@/store/onboarding', () => ({ startManualOnboarding, startManualProviderOAuth }))
+vi.mock('@/lib/external-link', () => ({ openExternalLink }))
 
 import { formatTimelineRange, formatTimelineTimestamp } from './timestamp'
 
@@ -75,6 +84,23 @@ function assistantMessage(): ThreadMessage {
       unstable_data: [],
       steps: [],
       custom: { timelineCompletedAt: completedAt, timelineTimestamp: createdAt.getTime() / 1000 }
+    }
+  } as unknown as ThreadMessage
+}
+
+function kiloExhaustedAssistantMessage(): ThreadMessage {
+  return {
+    id: 'assistant-kilo-exhausted',
+    role: 'assistant',
+    content: [],
+    status: { type: 'incomplete', reason: 'error', error: 'Lượt dùng thử miễn phí hôm nay đã hết.' },
+    createdAt,
+    metadata: {
+      unstable_state: null,
+      unstable_annotations: [],
+      unstable_data: [],
+      steps: [],
+      custom: { errorCode: 'kilo_fallback_exhausted' }
     }
   } as unknown as ThreadMessage
 }
@@ -153,5 +179,27 @@ describe('message timeline timestamps', () => {
     )
 
     expect(stamps.filter(stamp => stamp === formatTimelineRange(startedAt, completedAt))).toHaveLength(1)
+  })
+})
+
+describe('Kilo fallback exhaustion card', () => {
+  it('shows exactly two actions and routes them through existing onboarding/external-link seams', async () => {
+    render(<Harness assistant={kiloExhaustedAssistantMessage()} />)
+
+    expect(await screen.findByText('Lượt dùng thử miễn phí hôm nay đã hết.')).toBeTruthy()
+    const actions = screen.getAllByRole('button', { name: /ChatGPT|Gemini/i })
+
+    expect(actions).toHaveLength(2)
+    expect(actions.map(action => action.textContent)).toEqual([
+      'Đăng nhập ChatGPT (khuyên dùng)',
+      'Lấy key Google Gemini miễn phí'
+    ])
+
+    fireEvent.click(actions[0])
+    expect(startManualProviderOAuth).toHaveBeenCalledWith('openai-codex', expect.any(String))
+
+    fireEvent.click(actions[1])
+    expect(openExternalLink).toHaveBeenCalledWith('https://aistudio.google.com/app/apikey')
+    expect(startManualOnboarding).toHaveBeenCalledWith(expect.any(String))
   })
 })

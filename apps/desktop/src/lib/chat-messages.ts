@@ -26,6 +26,7 @@ export type ChatMessage = {
   completedAt?: number
   pending?: boolean
   error?: string
+  errorCode?: string
   branchGroupId?: string
   hidden?: boolean
   /** Sealed mid-turn commentary (`message.interim`) — rendered without the
