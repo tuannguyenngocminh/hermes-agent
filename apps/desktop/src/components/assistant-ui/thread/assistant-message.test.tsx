@@ -5,8 +5,8 @@
 // AssistantMessage's action bar hide the button entirely when no handler is
 // supplied, matching how onDismissError/onRestoreToMessage already behave.
 import { AssistantRuntimeProvider, type ThreadMessage, useExternalStoreRuntime } from '@assistant-ui/react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $displayTimestamps } from '@/store/display-timestamps'
 
@@ -107,10 +107,12 @@ function kiloExhaustedAssistantMessage(): ThreadMessage {
 
 function Harness({
   assistant = assistantMessage(),
-  onBranchInNewChat
+  onBranchInNewChat,
+  onDismissError
 }: {
   assistant?: ThreadMessage
   onBranchInNewChat?: (messageId: string) => void
+  onDismissError?: (messageId: string) => void
 }) {
   const runtime = useExternalStoreRuntime<ThreadMessage>({
     messages: [userMessage(), assistant],
@@ -120,7 +122,7 @@ function Harness({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Thread onBranchInNewChat={onBranchInNewChat} />
+      <Thread onBranchInNewChat={onBranchInNewChat} onDismissError={onDismissError} />
     </AssistantRuntimeProvider>
   )
 }
@@ -183,6 +185,10 @@ describe('message timeline timestamps', () => {
 })
 
 describe('Kilo fallback exhaustion card', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('shows exactly two actions and routes them through existing onboarding/external-link seams', async () => {
     render(<Harness assistant={kiloExhaustedAssistantMessage()} />)
 
@@ -201,5 +207,52 @@ describe('Kilo fallback exhaustion card', () => {
     fireEvent.click(actions[1])
     expect(openExternalLink).toHaveBeenCalledWith('https://aistudio.google.com/app/apikey')
     expect(startManualOnboarding).toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it('provides a dismiss button that reuses the existing error dismissal callback', async () => {
+    const onDismissError = vi.fn()
+
+    render(<Harness assistant={kiloExhaustedAssistantMessage()} onDismissError={onDismissError} />)
+
+    const dismiss = await screen.findByRole('button', { name: 'Dismiss error' })
+
+    fireEvent.click(dismiss)
+
+    expect(onDismissError).toHaveBeenCalledTimes(1)
+    expect(onDismissError).toHaveBeenCalledWith('assistant-kilo-exhausted')
+  })
+
+  it('keeps all three actions keyboard-reachable and activates them through native buttons', async () => {
+    const onDismissError = vi.fn()
+
+    render(<Harness assistant={kiloExhaustedAssistantMessage()} onDismissError={onDismissError} />)
+
+    const card = await screen.findByRole('alert')
+    const buttons = within(card).getAllByRole('button')
+
+    expect(buttons).toHaveLength(3)
+    expect(buttons.every(button => button.getAttribute('type') === 'button')).toBe(true)
+
+    buttons.forEach(button => {
+      button.focus()
+      expect(globalThis.document.activeElement).toBe(button)
+    })
+
+    // jsdom does not synthesize a browser's default keyboard click. Send the
+    // real key events before the native click each browser would generate.
+    fireEvent.keyDown(buttons[0], { key: 'Enter', code: 'Enter' })
+    fireEvent.keyUp(buttons[0], { key: 'Enter', code: 'Enter' })
+    fireEvent.click(buttons[0])
+    fireEvent.keyDown(buttons[1], { key: ' ', code: 'Space' })
+    fireEvent.keyUp(buttons[1], { key: ' ', code: 'Space' })
+    fireEvent.click(buttons[1])
+    fireEvent.keyDown(buttons[2], { key: 'Enter', code: 'Enter' })
+    fireEvent.keyUp(buttons[2], { key: 'Enter', code: 'Enter' })
+    fireEvent.click(buttons[2])
+
+    expect(startManualProviderOAuth).toHaveBeenCalledTimes(1)
+    expect(openExternalLink).toHaveBeenCalledTimes(1)
+    expect(startManualOnboarding).toHaveBeenCalledTimes(1)
+    expect(onDismissError).toHaveBeenCalledTimes(1)
   })
 })

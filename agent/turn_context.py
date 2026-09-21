@@ -479,6 +479,11 @@ def build_turn_context(
     # Bind the skill write-origin ContextVar for this thread.
     set_current_write_origin(getattr(agent, "_memory_write_origin", "assistant_tool"))
 
+    # Clear a terminal Kilo marker before any previous-turn cleanup can be
+    # skipped by an exception, interrupt, or early return. The finalizer still
+    # transfers the marker from the completed turn exactly as before.
+    agent._kilo_fallback_exhausted = False
+
     # Restore the primary runtime if the previous turn activated fallback.
     agent._restore_primary_runtime()
 

@@ -284,6 +284,7 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
   } = deps
 
   const unscopedStreamSessionIdRef = useRef<string | null>(null)
+  const handledKiloFailureRef = useRef(new Map<string, string>())
 
   // session.info arrives in bursts (agent build ready + turn end + title /
   // MCP / compress edges within the same second). Each used to fire its own
@@ -732,6 +733,7 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
           return
         }
 
+        handledKiloFailureRef.current.delete(sessionId)
         flushQueuedDeltas(sessionId)
         pruneFinishedSessionSubagents(sessionId)
         setSessionCompacting(sessionId, false)
@@ -914,6 +916,26 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
       } else if (event.type === 'message.complete') {
         if (!sessionId) {
           return
+        }
+
+        const kiloFailureSignature =
+          payload?.failure_reason === KILO_FALLBACK_EXHAUSTED_FAILURE_REASON
+            ? JSON.stringify([
+                payload.failure_reason,
+                payload.status,
+                payload.error,
+                payload.partial,
+                payload.text,
+                payload.rendered
+              ])
+            : null
+
+        if (kiloFailureSignature && handledKiloFailureRef.current.get(sessionId) === kiloFailureSignature) {
+          return
+        }
+
+        if (kiloFailureSignature) {
+          handledKiloFailureRef.current.set(sessionId, kiloFailureSignature)
         }
 
         // Turn ended — drop any blocking prompt still open for THIS session
@@ -1477,8 +1499,6 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
         clearAgentNotice((event.payload as AgentNoticePayload | undefined)?.key)
       } else if (event.type === 'error') {
         const errorMessage = payload?.message || 'Hermes reported an error'
-        const kiloCopy = kiloFallbackCopyForFailureReason(payload?.failure_reason)
-        const userFacingError = kiloCopy?.title ?? errorMessage
         const looksLikeProviderSetup = isProviderSetupErrorMessage(errorMessage)
 
         // A turn that errors out has also ended — drop any open blocking prompt
@@ -1497,19 +1517,14 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
           flashPetActivity({ error: true })
         }
 
-        if (!kiloCopy) {
-          dispatchNativeNotification({
-            body: errorMessage,
-            kind: 'turnError',
-            sessionId,
-            title: translateNow('notifications.native.turnErrorTitle')
-          })
-        }
+        dispatchNativeNotification({
+          body: errorMessage,
+          kind: 'turnError',
+          sessionId,
+          title: translateNow('notifications.native.turnErrorTitle')
+        })
 
-        if (kiloCopy) {
-          // The assistant bubble is the single recovery surface; do not
-          // duplicate it as a toast or native notification.
-        } else if (looksLikeProviderSetup) {
+        if (looksLikeProviderSetup) {
           requestDesktopOnboarding(errorMessage)
         } else if (isDiskFullErrorMessage(errorMessage)) {
           notifyError(new Error(errorMessage), translateNow('notifications.errors.diskFull'))
@@ -1522,13 +1537,13 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
             id: `gateway-error:${errorMessage}`,
             kind: 'error',
             title: 'Hermes error',
-            message: userFacingError
+            message: errorMessage
           })
         }
 
         if (sessionId) {
           flushQueuedDeltas(sessionId)
-          failAssistantMessage(sessionId, userFacingError, occurredAt, kiloCopy ? KILO_FALLBACK_EXHAUSTED_FAILURE_REASON : undefined)
+          failAssistantMessage(sessionId, errorMessage, occurredAt)
         }
 
         if (isActiveEvent) {

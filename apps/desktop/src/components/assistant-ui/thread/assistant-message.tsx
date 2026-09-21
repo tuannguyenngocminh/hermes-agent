@@ -43,7 +43,15 @@ import { $voicePlayback } from '@/store/voice-playback'
 // would re-derive the changed-files card on every message re-render.
 const EMPTY_PARTS: readonly unknown[] = []
 
-function KiloFallbackErrorCard() {
+function KiloFallbackErrorCard({
+  dismissLabel,
+  messageId,
+  onDismissError
+}: {
+  dismissLabel: string
+  messageId: string
+  onDismissError?: (messageId: string) => void
+}) {
   return (
     <div
       className="mt-1.5 flex max-w-[min(100%,34rem)] flex-col gap-2 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-surface-secondary) p-3 text-sm text-foreground"
@@ -51,24 +59,37 @@ function KiloFallbackErrorCard() {
     >
       <p className="font-medium">{KILO_FALLBACK_EXHAUSTED_COPY.title}</p>
       <p className="text-muted-foreground">{KILO_FALLBACK_EXHAUSTED_COPY.body}</p>
-      <div className="flex flex-wrap gap-2">
-        <button
-          className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => startManualProviderOAuth('openai-codex', KILO_FALLBACK_EXHAUSTED_COPY.chatGptReason)}
-          type="button"
-        >
-          {KILO_FALLBACK_EXHAUSTED_COPY.chatGptAction}
-        </button>
-        <button
-          className="rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => {
-            openExternalLink('https://aistudio.google.com/app/apikey')
-            startManualOnboarding(KILO_FALLBACK_EXHAUSTED_COPY.geminiReason)
-          }}
-          type="button"
-        >
-          {KILO_FALLBACK_EXHAUSTED_COPY.geminiAction}
-        </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => startManualProviderOAuth('openai-codex', KILO_FALLBACK_EXHAUSTED_COPY.chatGptReason)}
+            type="button"
+          >
+            {KILO_FALLBACK_EXHAUSTED_COPY.chatGptAction}
+          </button>
+          <button
+            className="rounded-md border border-(--ui-stroke-secondary) px-3 py-1.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => {
+              openExternalLink('https://aistudio.google.com/app/apikey')
+              startManualOnboarding(KILO_FALLBACK_EXHAUSTED_COPY.geminiReason)
+            }}
+            type="button"
+          >
+            {KILO_FALLBACK_EXHAUSTED_COPY.geminiAction}
+          </button>
+        </div>
+        {onDismissError && (
+          <TooltipIconButton
+            className="ml-auto shrink-0 text-muted-foreground opacity-70 hover:opacity-100"
+            onClick={() => onDismissError(messageId)}
+            side="top"
+            tooltip={dismissLabel}
+            type="button"
+          >
+            <XIcon className="size-3.5" />
+          </TooltipIconButton>
+        )}
       </div>
     </div>
   )
@@ -245,7 +266,11 @@ export const AssistantMessage: FC<{
         )}
         <MessagePrimitive.Error>
           {isKiloFallbackExhausted ? (
-            <KiloFallbackErrorCard />
+            <KiloFallbackErrorCard
+              dismissLabel={t.assistant.thread.dismissError}
+              messageId={messageId}
+              onDismissError={onDismissError}
+            />
           ) : (
             <ErrorPrimitive.Root
               className="mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"

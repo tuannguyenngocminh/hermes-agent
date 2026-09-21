@@ -10,6 +10,12 @@ import type { RpcEvent } from '@/types/hermes'
 
 import { useMessageStream } from './index'
 
+const { dispatchNativeNotification } = vi.hoisted(() => ({
+  dispatchNativeNotification: vi.fn()
+}))
+
+vi.mock('@/store/native-notifications', () => ({ dispatchNativeNotification }))
+
 const SID = 'session-1'
 
 let handleEvent: ((event: RpcEvent) => void) | null = null
@@ -56,6 +62,9 @@ const delta = (text: string) => act(() => handleEvent!({ payload: { text }, sess
 const completeWithError = (payload: Record<string, unknown>) =>
   act(() => handleEvent!({ payload: { status: 'error', ...payload }, session_id: SID, type: 'message.complete' }))
 
+const errorEvent = (payload: Record<string, unknown>) =>
+  act(() => handleEvent!({ payload, session_id: SID, type: 'error' }))
+
 function getState(): ClientSessionState {
   return sessionStates.get(SID) ?? createClientSessionState()
 }
@@ -67,6 +76,7 @@ function lastAssistant() {
 describe('terminal error message.complete frames', () => {
   beforeEach(() => {
     handleEvent = null
+    vi.clearAllMocks()
   })
 
   afterEach(() => {
@@ -134,5 +144,56 @@ describe('terminal error message.complete frames', () => {
     expect(bubble?.errorCode).toBe('kilo_fallback_exhausted')
     expect(bubble?.error).not.toMatch(/HTTP|model|kilocode|provider|payload/i)
     expect(chatMessageText(bubble!)).toBe('partial answer')
+  })
+
+  it('surfaces a duplicate Kilo terminal signal as one card and one notification', async () => {
+    await mountStream()
+    await start()
+    await delta('partial answer')
+
+    const payload = {
+      error: 'HTTP 429 model=kilocode raw provider payload',
+      failure_reason: 'kilo_fallback_exhausted',
+      partial: true,
+      text: 'partial answer'
+    }
+
+    await completeWithError(payload)
+    await completeWithError(payload)
+
+    expect(getState().messages.filter(message => message.role === 'assistant' && !message.hidden)).toHaveLength(1)
+    expect(dispatchNativeNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not map failure_reason from an unstructured error event', async () => {
+    await mountStream()
+
+    const errorMessage = 'HTTP 429 model=kilocode raw provider payload'
+    await errorEvent({ failure_reason: 'kilo_fallback_exhausted', message: errorMessage })
+
+    const bubble = lastAssistant()
+    expect(bubble?.error).toBe(errorMessage)
+    expect(bubble?.errorCode).toBeUndefined()
+    expect(dispatchNativeNotification).toHaveBeenCalledTimes(1)
+    expect(dispatchNativeNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ body: errorMessage, kind: 'turnError' })
+    )
+  })
+
+  it('allows a new stream turn after a terminal error', async () => {
+    await mountStream()
+    await start()
+    await delta('failed answer')
+    await completeWithError({ error: 'temporary failure', partial: true, text: 'failed answer' })
+
+    await start()
+    await delta('retry answer')
+    await act(() => handleEvent!({ payload: { text: 'retry answer' }, session_id: SID, type: 'message.complete' }))
+
+    const bubble = lastAssistant()
+    expect(chatMessageText(bubble!)).toBe('retry answer')
+    expect(bubble?.error).toBeUndefined()
+    expect(getState().busy).toBe(false)
+    expect(getState().awaitingResponse).toBe(false)
   })
 })

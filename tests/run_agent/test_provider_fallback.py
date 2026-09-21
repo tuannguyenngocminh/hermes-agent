@@ -7,6 +7,8 @@ advancement through multiple providers.
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from run_agent import AIAgent, _pool_may_recover_from_rate_limit
 
 
@@ -69,6 +71,65 @@ class TestFallbackChainInit:
 
 
 class TestFallbackChainAdvancement:
+    def test_turn_start_clears_kilo_exhaustion_before_primary_restore(self, monkeypatch):
+        """A stale marker cannot survive into the next turn's restore hook."""
+        from agent.turn_context import build_turn_context
+
+        agent = MagicMock()
+        agent.session_id = "session-under-test"
+        agent._memory_write_origin = "assistant_tool"
+        agent._kilo_fallback_exhausted = True
+
+        def restore_primary_runtime():
+            assert agent._kilo_fallback_exhausted is False
+            raise RuntimeError("stop after restore ordering assertion")
+
+        agent._restore_primary_runtime.side_effect = restore_primary_runtime
+        monkeypatch.setattr(
+            "agent.turn_context.recover_rotated_compression_session",
+            lambda _agent: None,
+        )
+
+        with pytest.raises(RuntimeError, match="stop after restore ordering assertion"):
+            build_turn_context(
+                agent,
+                user_message="retry",
+                system_message=None,
+                conversation_history=[],
+                task_id="task",
+                stream_callback=None,
+                persist_user_message=None,
+                restore_or_build_system_prompt=lambda: None,
+                install_safe_stdio=lambda: None,
+                sanitize_surrogates=lambda value: value,
+                summarize_user_message_for_log=lambda value: value,
+                set_session_context=lambda _session_id: None,
+                set_current_write_origin=lambda _origin: None,
+                ra=MagicMock(),
+            )
+
+    def test_kilo_only_chain_without_credential_or_init_marks_exhaustion_once(self):
+        """A Kilo-only chain with no activatable entry reaches terminal exhaustion."""
+        agent = _make_agent(
+            fallback_model=[
+                {"provider": "kilocode", "model": "kilo-missing-1"},
+                {"provider": "kilocode", "model": "kilo-missing-2"},
+            ]
+        )
+        agent.provider = "kilocode"
+        agent.model = "kilo-primary"
+        agent._primary_runtime = {"provider": "kilocode", "model": "kilo-primary"}
+
+        with patch(
+            "agent.auxiliary_client.resolve_provider_client",
+            return_value=(None, None),
+        ) as resolve_provider_client:
+            assert agent._try_activate_fallback() is False
+
+        assert resolve_provider_client.call_count == 2
+        assert agent._fallback_index == len(agent._fallback_chain)
+        assert agent._kilo_fallback_exhausted is True
+
     def test_exhausted_returns_false(self):
         agent = _make_agent(fallback_model=None)
         assert agent._try_activate_fallback() is False
