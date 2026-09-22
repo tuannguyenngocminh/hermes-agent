@@ -2251,7 +2251,11 @@ def resolve_runtime_provider(
         # resolution so callers surface the missing credential (or consult only
         # an explicitly configured fallback chain). LM Studio's no-auth path
         # supplies a non-empty placeholder in the credential resolver above.
-        if not has_usable_secret(creds.get("api_key")):
+        anonymous_runtime = (
+            pconfig.supports_anonymous
+            and creds.get("api_key") == "no-key-required"
+        )
+        if not has_usable_secret(creds.get("api_key")) and not anonymous_runtime:
             env_names = ", ".join(pconfig.api_key_env_vars)
             hint = f" Set {env_names}." if env_names else ""
             raise AuthError(

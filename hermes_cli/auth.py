@@ -244,6 +244,10 @@ class ProviderConfig:
     api_key_env_vars: tuple = ()
     # Optional env var for base URL override
     base_url_env_var: str = ""
+    # True when the provider accepts anonymous inference without a static key.
+    # The runtime still uses a non-empty SDK placeholder, but callers must
+    # suppress the placeholder's bearer header on the wire.
+    supports_anonymous: bool = False
 
 
 PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
@@ -491,6 +495,7 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         inference_base_url="https://api.kilo.ai/api/gateway",
         api_key_env_vars=("KILOCODE_API_KEY",),
         base_url_env_var="KILOCODE_BASE_URL",
+        supports_anonymous=True,
     ),
     "huggingface": ProviderConfig(
         id="huggingface",
@@ -7260,6 +7265,14 @@ def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
     if not api_key and provider_id == "lmstudio":
         api_key = LMSTUDIO_NOAUTH_PLACEHOLDER
         key_source = key_source or "default"
+
+    # Kilo's free gateway accepts anonymous inference. Keep the explicit
+    # KILOCODE_API_KEY path above intact, but hand the OpenAI SDK a non-empty
+    # internal sentinel so client construction can remain valid. The shared
+    # client router removes the corresponding bearer header for this sentinel.
+    if not api_key and pconfig.supports_anonymous:
+        api_key = "no-key-required"
+        key_source = key_source or "anonymous"
 
     env_url = ""
     if pconfig.base_url_env_var:

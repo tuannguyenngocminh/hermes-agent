@@ -4232,6 +4232,33 @@ class TestCustomEndpointApiKeyInheritance:
         assert captured.get("api_key") == "no-key-required"
 
 
+class TestKiloAnonymousClient:
+    def test_anonymous_kilocode_clears_placeholder_authorization_header(self, monkeypatch):
+        """Anonymous Kilo must not send ``Bearer no-key-required`` to the gateway."""
+        import agent.auxiliary_client as ac
+
+        monkeypatch.delenv("KILOCODE_API_KEY", raising=False)
+        captured: dict = {}
+
+        def _capture_create(**kwargs):
+            captured.update(kwargs)
+            client = MagicMock()
+            client.api_key = kwargs["api_key"]
+            client.base_url = kwargs["base_url"]
+            return client
+
+        with patch.object(ac, "_create_openai_client", side_effect=_capture_create):
+            client, model = resolve_provider_client(
+                "kilocode",
+                model="kilo-auto/free",
+            )
+
+        assert client is not None
+        assert model == "kilo-auto/free"
+        assert captured["api_key"] == "no-key-required"
+        assert captured["default_headers"]["Authorization"] == ""
+
+
 class TestMoaAggregatorStreamingBypass:
     def test_moa_aggregator_stream_bypasses_relay_for_codex_auxiliary_client(self, monkeypatch):
         """The MoA facade owns the streaming contract. For Codex Responses-shim

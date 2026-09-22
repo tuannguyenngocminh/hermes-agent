@@ -92,6 +92,7 @@ class TestProviderRegistry:
         pconfig = PROVIDER_REGISTRY["kilocode"]
         assert pconfig.api_key_env_vars == ("KILOCODE_API_KEY",)
         assert pconfig.base_url_env_var == "KILOCODE_BASE_URL"
+        assert pconfig.supports_anonymous is True
 
     def test_gmi_env_vars(self):
         pconfig = PROVIDER_REGISTRY["gmi"]
@@ -392,6 +393,14 @@ class TestResolveApiKeyProviderCredentials:
         assert creds["api_key"] == "kilo-secret-key"
         assert creds["base_url"] == "https://api.kilo.ai/api/gateway"
 
+    def test_resolve_kilocode_without_key_uses_anonymous_runtime(self, monkeypatch):
+        monkeypatch.delenv("KILOCODE_API_KEY", raising=False)
+        creds = resolve_api_key_provider_credentials("kilocode")
+        assert creds["provider"] == "kilocode"
+        assert creds["api_key"] == "no-key-required"
+        assert creds["source"] == "anonymous"
+        assert creds["base_url"] == "https://api.kilo.ai/api/gateway"
+
 
 
 
@@ -436,6 +445,16 @@ class TestRuntimeProviderResolution:
         assert result["provider"] == "kilocode"
         assert result["api_mode"] == "chat_completions"
         assert result["api_key"] == "kilo-key"
+        assert "kilo.ai" in result["base_url"]
+
+    def test_runtime_kilocode_without_key_is_anonymous(self, monkeypatch):
+        monkeypatch.delenv("KILOCODE_API_KEY", raising=False)
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+        result = resolve_runtime_provider(requested="kilocode")
+        assert result["provider"] == "kilocode"
+        assert result["api_key"] == "no-key-required"
+        assert result["source"] == "anonymous"
+        assert result["api_mode"] == "chat_completions"
         assert "kilo.ai" in result["base_url"]
 
     def test_runtime_gmi(self, monkeypatch):
@@ -1213,4 +1232,3 @@ class TestDeepInfraProviderProfile:
         # Fallback list intentionally empty — live catalog is the source
         # of truth. Pin the shape only, not contents.
         assert isinstance(profile.fallback_models, tuple)
-

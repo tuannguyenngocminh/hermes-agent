@@ -6726,6 +6726,12 @@ def resolve_provider_client(
                     headers.update(_ph_main.default_headers)
             except Exception:
                 pass
+        if provider == "kilocode" and api_key == "no-key-required":
+            # The OpenAI SDK requires a non-empty api_key, but Kilo's free
+            # gateway is anonymous. Override the SDK-generated bearer header
+            # only for this sentinel; a real KILOCODE_API_KEY follows the
+            # normal Authorization path unchanged.
+            headers["Authorization"] = ""
         _merged_main = _apply_user_default_headers(headers)
         if _merged_main:
             headers = _merged_main

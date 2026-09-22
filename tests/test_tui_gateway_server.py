@@ -7535,6 +7535,23 @@ def test_setup_runtime_check_allows_no_key_custom_runtime(monkeypatch):
     assert resp["result"]["provider"] == "custom"
 
 
+def test_setup_runtime_check_allows_anonymous_kilocode(monkeypatch):
+    monkeypatch.delenv("KILOCODE_API_KEY", raising=False)
+    monkeypatch.setattr("hermes_cli.main._has_any_provider_configured", lambda: True)
+
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "setup.runtime_check",
+            "params": {"provider": "kilocode"},
+        }
+    )
+
+    assert resp["result"]["ok"] is True
+    assert resp["result"]["provider"] == "kilocode"
+    assert resp["result"]["source"] == "anonymous"
+
+
 def test_setup_runtime_check_rejects_implicit_bedrock_when_unconfigured(monkeypatch):
     monkeypatch.setattr("hermes_cli.main._has_any_provider_configured", lambda: False)
     monkeypatch.setattr(
